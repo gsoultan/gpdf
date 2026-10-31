@@ -134,3 +134,54 @@ func FuzzParseObject(f *testing.F) {
 		}
 	})
 }
+
+// FuzzTokenizer checks that the tokenizer always makes progress and never panics.
+func FuzzTokenizer(f *testing.F) {
+	for _, s := range []string{"<< /A (b\\) <41 4> [1.5 -.2 +3] >> %c\nR null", "(((", "<<>>", "/#", "\x00>}"} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		tok := NewTokenizer(bytes.NewReader(data), 0, int64(len(data)))
+		last := int64(-1)
+		for i := 0; i < len(data)+8; i++ {
+			k, err := tok.Next()
+			if err != nil || k.Kind == syntax.TokenEOF {
+				return
+			}
+			if off := tok.CurrentOffset(); off <= last && off < int64(len(data)) {
+				t.Fatalf("no progress at offset %d (token %v)", off, k)
+			} else {
+				last = off
+			}
+		}
+		t.Fatalf("tokenizer produced more tokens than bytes: %q", data)
+	})
+}
+
+var benchObject = []byte("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> " +
+	"/ProcSet [/PDF /Text] >> /Contents [7 0 R 8 0 R] /Annots [] /Rotate 0 /Group << /S /Transparency /CS /DeviceRGB >> " +
+	"/Title (A page \\(with\\) escapes) /ID <414243> >>")
+
+func BenchmarkParseObject(b *testing.B) {
+	b.SetBytes(int64(len(benchObject)))
+	b.ReportAllocs()
+	for b.Loop() {
+		p := NewParser(bytes.NewReader(benchObject), int64(len(benchObject)))
+		if _, _, err := p.ParseObject(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkTokenizer(b *testing.B) {
+	b.SetBytes(int64(len(benchObject)))
+	for b.Loop() {
+		tok := NewTokenizer(bytes.NewReader(benchObject), 0, int64(len(benchObject)))
+		for {
+			k, err := tok.Next()
+			if err != nil || k.Kind == syntax.TokenEOF {
+				break
+			}
+		}
+	}
+}
