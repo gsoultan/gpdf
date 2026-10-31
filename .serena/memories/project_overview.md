@@ -10,4 +10,6 @@
 - Entry points for users: `doc.Open`, `doc.OpenWithPassword`, `doc.OpenReader`, `doc.New()` builder,
   `doc.Merge`, `doc.Split`, `doc.SplitEvery`, `doc.Extract`. CLI examples in `cmd/*` (each takes an output path).
 - Sample input committed at repo root: `CV CONTOH.pdf` (Canva, xref table, 1 page). `cmd/cv` recreates it.
-- Last full review: 2026-10-31 (see memory `review_findings`).
+- Last full review: 2026-10-31 (see memory `review_findings`); round 2 the same day added headers/footers, PDF/A,
+  hint streams, fuzz targets (`FuzzReadDocument`, `FuzzTokenizer`, `FuzzParseObject`) and benchmarks
+  (`go test -bench . ./syntax/impl ./tests/reader ./tests/doc`).

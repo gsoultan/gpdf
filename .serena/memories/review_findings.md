@@ -56,13 +56,20 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   FlowBuilder.Image works) uses it. `DecodePNGToRaw` is deprecated. [TestPNGAlphaBecomesSoftMaskAndImagesAreCompressed, poppler render]
 - FIXED (proteus-converter PR #3) — raw image XObjects and soft masks are written with /FlateDecode.
 
+- FIXED (round 2, 2026-10-31) — Adobe CMYK JPEGs get /Decode [1 0 1 0 1 0 1 0] (`jpegHasAdobeMarker`). [TestAdobeCMYKJPEGGetsInvertedDecode]
+- FIXED (round 2) — SaveLinearized writes a real primary hint stream (page offset + shared object tables) with
+  spec layout and renumbering; poppler parses it with no warnings. [TestSaveLinearizedWritesUsableHintTables]
+- FIXED (round 2) — unsupported filter: Resolve keeps the stream encoded (with /Filter), writer copies it unchanged.
+  [TestUnknownFilterIsPassedThrough]
+- FIXED (round 2) — xref table entries are read as tokens (19/21-byte entries work). [TestXRefTableWithNineteenByteEntries]
+- FIXED (round 2, found by FuzzReadDocument) — a stray `)` in a content stream hung text extraction forever
+  (`content/impl/tokenizer.go` readOperator). [TestParseStrayDelimiterTerminates]
+
 ## Still open
-- JPEG CMYK (Adobe inverted) gets DeviceCMYK with no /Decode array, so such files can render inverted.
-- SaveLinearized writes no hint stream (poppler warns "Hints table length ... invalid"; files still open).
 - AES-256 passwords are not SASLprep-normalised (ASCII and NFC input fine).
-- Reader decodes every stream on Resolve; a stream with an unsupported filter makes Resolve (and Save) fail.
 - Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
-- Xref table parser assumes 20-byte entries.
+- PDF/A: only level B of parts 2 and 3; checks cover fonts, CMYK and encryption, not everything veraPDF checks
+  (no veraPDF available here). Not done: PDF/A-1, level A/U, embedded-file (AF) support for PDF/A-3.
 - Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).
 
 ## Repo / process
