@@ -66,7 +66,7 @@ func (c *documentCore) resolveLength(ref model.Ref) (int64, bool) {
 		if !ok || !isStream {
 			return 0, false
 		}
-		o, err := c.extractFromObjectStream(objStm, e.StreamObjectNumber, e.IndexInStream)
+		o, err := c.extractFromObjectStream(objStm, e.StreamObjectNumber, e.IndexInStream, ref.ObjectNumber)
 		if err != nil {
 			return 0, false
 		}
@@ -136,7 +136,7 @@ func (c *documentCore) Resolve(ref model.Ref) (model.Object, error) {
 	var obj model.Object
 	var err error
 	if e.Compressed {
-		obj, err = c.resolveFromObjectStream(e.StreamObjectNumber, e.IndexInStream)
+		obj, err = c.resolveFromObjectStream(e.StreamObjectNumber, e.IndexInStream, ref.ObjectNumber)
 		if err != nil {
 			return nil, fmt.Errorf("object %d %d R (object stream %d, index %d): %w",
 				ref.ObjectNumber, ref.Generation, e.StreamObjectNumber, e.IndexInStream, err)
@@ -196,7 +196,7 @@ func (c *documentCore) resolveIndirect(ref model.Ref, e xref.Entry) (model.Objec
 	return obj, nil
 }
 
-func (c *documentCore) resolveFromObjectStream(streamObjNum, index int) (model.Object, error) {
+func (c *documentCore) resolveFromObjectStream(streamObjNum, index, objNum int) (model.Object, error) {
 	streamRef := model.Ref{ObjectNumber: streamObjNum, Generation: 0}
 
 	c.mu.Lock()
@@ -217,11 +217,15 @@ func (c *documentCore) resolveFromObjectStream(streamObjNum, index int) (model.O
 		}
 		objStm = s
 		c.mu.Lock()
-		c.objects[streamRef] = objStm
+		if _, exists := c.objects[streamRef]; !exists {
+			c.objects[streamRef] = objStm
+			c.cacheOrder = append(c.cacheOrder, streamRef)
+			c.enforceObjectCacheLimitLocked()
+		}
 		c.mu.Unlock()
 	}
 
-	return c.extractFromObjectStream(objStm, streamObjNum, index)
+	return c.extractFromObjectStream(objStm, streamObjNum, index, objNum)
 }
 
 func (c *documentCore) parseObjectStream(streamObjNum int, streamRef model.Ref) (*model.Stream, error) {
@@ -252,7 +256,10 @@ func (c *documentCore) parseObjectStream(streamObjNum int, streamRef model.Ref) 
 	return s, nil
 }
 
-func (c *documentCore) extractFromObjectStream(objStm *model.Stream, streamObjNum, index int) (model.Object, error) {
+// extractFromObjectStream parses object objNum, expected at position index of the object
+// stream. If the header lists a different object number there, the header is searched
+// for objNum (some writers produce off-by-one indexes); a missing object is an error.
+func (c *documentCore) extractFromObjectStream(objStm *model.Stream, streamObjNum, index, objNum int) (model.Object, error) {
 	n := intFromModelObj(objStm.Dict[model.Name("N")])
 	first := intFromModelObj(objStm.Dict[model.Name("First")])
 	contentLen := len(objStm.Content)
@@ -266,8 +273,17 @@ func (c *documentCore) extractFromObjectStream(objStm *model.Stream, streamObjNu
 
 	header := string(objStm.Content[:first])
 	fields := strings.Fields(header)
-	if len(fields) < (index+1)*2 {
-		return nil, fmt.Errorf("object stream %d: header too short for index %d", streamObjNum, index)
+	if len(fields) < (index+1)*2 || fields[index*2] != strconv.Itoa(objNum) {
+		found := false
+		for i := 0; 2*i+1 < len(fields) && i < n; i++ {
+			if fields[2*i] == strconv.Itoa(objNum) {
+				index, found = i, true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("object stream %d: object %d not in header", streamObjNum, objNum)
+		}
 	}
 	objOffset, err := strconv.Atoi(fields[index*2+1])
 	if err != nil {

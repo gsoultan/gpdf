@@ -150,3 +150,58 @@ func (b *Builder) OnePage() *Builder {
 	b.Obj(5, 0, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
 	return b
 }
+
+// ObjStm adds object stream num holding the given objects (number -> body), FlateDecode'd.
+func (b *Builder) ObjStm(num int, objs map[int]string) *Builder {
+	nums := make([]int, 0, len(objs))
+	for n := range objs {
+		nums = append(nums, n)
+	}
+	sort.Ints(nums)
+	var header, data bytes.Buffer
+	for _, n := range nums {
+		fmt.Fprintf(&header, "%d %d ", n, data.Len())
+		data.WriteString(objs[n])
+		data.WriteString("\n")
+	}
+	payload := append(header.Bytes(), data.Bytes()...)
+	return b.Stream(num, 0, fmt.Sprintf("/Type /ObjStm /N %d /First %d /Filter /FlateDecode", len(nums), header.Len()), Flate(payload))
+}
+
+// Hybrid serialises a hybrid-reference file (ISO 32000-1 §7.5.8.4): a classic xref table
+// that omits the objects stored in object streams, plus a cross-reference stream, named
+// by the trailer's /XRefStm, with type-2 entries for them. compressed maps an object
+// number to its object stream number and index.
+func (b *Builder) Hybrid(trailer string, compressed map[int][2]int) []byte {
+	body, offsets, nums := b.body()
+	maxNum := nums[len(nums)-1]
+	for n := range compressed {
+		maxNum = max(maxNum, n)
+	}
+	stmNum := maxNum + 1
+	size := stmNum + 1
+	var rows []byte
+	for i := range size {
+		if c, ok := compressed[i]; ok {
+			rows = append(rows, 2, byte(c[0]>>8), byte(c[0]), byte(c[1]))
+		} else {
+			rows = append(rows, 0, 0, 0, 0)
+		}
+	}
+	buf := bytes.NewBuffer(body)
+	stmOff := buf.Len()
+	fmt.Fprintf(buf, "%d 0 obj\n<< /Type /XRef /Size %d /W [1 2 1] /Length %d >>\nstream\n", stmNum, size, len(rows))
+	buf.Write(rows)
+	buf.WriteString("\nendstream\nendobj\n")
+	xref := buf.Len()
+	fmt.Fprintf(buf, "xref\n0 %d\n", size)
+	for i := range size {
+		if off, ok := offsets[i]; ok {
+			fmt.Fprintf(buf, "%010d %05d n \n", off, b.objs[i].gen)
+		} else {
+			buf.WriteString("0000000000 65535 f \n")
+		}
+	}
+	fmt.Fprintf(buf, "trailer\n<< /Size %d /XRefStm %d %s >>\nstartxref\n%d\n%%%%EOF\n", size, stmOff, trailer, xref)
+	return buf.Bytes()
+}

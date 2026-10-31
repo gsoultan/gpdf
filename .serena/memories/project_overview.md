@@ -1,7 +1,7 @@
 # gPDF — project overview
 
 - Module: `github.com/gsoultan/gpdf`, Go 1.26 (uses range-over-int, `strings.SplitSeq`, `new(v)` on values).
-- Only external dependency: `golang.org/x/crypto` (pbkdf2, used by the AES-256 handler).
+- No external dependencies (golang.org/x/crypto was dropped on 2026-10-31 with the ISO 32000-2 AES-256 rewrite).
 - Purpose: pure-Go library to read PDFs (text, layout, tables, images, vectors), search/replace text,
   build new PDFs with a fluent builder (text, tables, images, forms, layers, tagged/PDF-UA, outlines),
   merge/split/extract pages, and write encrypted or linearized output. Writer emits `%PDF-2.0`.

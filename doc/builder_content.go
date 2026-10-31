@@ -32,6 +32,11 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 	if embeddedFonts != nil {
 		ef = embeddedFonts
 	}
+	// Tc, Tw, Tz and Tr are graphics-state parameters: they survive ET and apply to every
+	// later text object. Track them and emit an operator whenever a run needs a different
+	// value, so one run's letter spacing (or synthetic bold) never leaks into the next.
+	// The state is unknown at the start because these ops may follow other content.
+	var ts textStateTracker
 	for _, r := range page.TextRuns {
 		baseName := r.FontName
 		if baseName == "" {
@@ -170,30 +175,17 @@ func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embed
 
 		btOps = append(btOps, content.Op{Name: "Tf", Args: []model.Object{resName, model.Real(size)}})
 
+		renderMode := int64(0)
 		if r.SyntheticBold {
-			btOps = append(btOps,
-				content.Op{Name: "Tr", Args: []model.Object{model.Integer(2)}}, // Fill then stroke
-				content.Op{Name: "w", Args: []model.Object{model.Real(size * 0.03)}},
-			)
+			renderMode = 2 // fill then stroke
 		}
-
-		if r.HorizontalScale != 0 && r.HorizontalScale != 100 {
-			btOps = append(btOps, content.Op{
-				Name: "Tz",
-				Args: []model.Object{model.Real(r.HorizontalScale)},
-			})
+		hScale := r.HorizontalScale
+		if hScale == 0 {
+			hScale = 100
 		}
-		if r.LetterSpacing != 0 {
-			btOps = append(btOps, content.Op{
-				Name: "Tc",
-				Args: []model.Object{model.Real(r.LetterSpacing)},
-			})
-		}
-		if r.WordSpacing != 0 {
-			btOps = append(btOps, content.Op{
-				Name: "Tw",
-				Args: []model.Object{model.Real(r.WordSpacing)},
-			})
+		btOps = ts.apply(btOps, renderMode, hScale, r.LetterSpacing, r.WordSpacing)
+		if r.SyntheticBold {
+			btOps = append(btOps, content.Op{Name: "w", Args: []model.Object{model.Real(size * 0.03)}})
 		}
 		opName := "Tj"
 		if useTJ {
@@ -613,4 +605,29 @@ func buildToUnicodeWinAnsiCMap() []byte {
 		0x98: '\u02dc', 0x99: '\u2122', 0x9a: '\u0161', 0x9b: '\u203a', 0x9c: '\u0153',
 		0x9e: '\u017e', 0x9f: '\u0178',
 	})
+}
+
+// textStateTracker remembers the text state parameters last set in a content stream.
+type textStateTracker struct {
+	known      bool
+	tr         int64
+	tz, tc, tw float64
+}
+
+// apply appends the Tr/Tz/Tc/Tw operators needed to reach the requested state.
+func (t *textStateTracker) apply(ops []content.Op, tr int64, tz, tc, tw float64) []content.Op {
+	if !t.known || t.tr != tr {
+		ops = append(ops, content.Op{Name: "Tr", Args: []model.Object{model.Integer(tr)}})
+	}
+	if !t.known || t.tz != tz {
+		ops = append(ops, content.Op{Name: "Tz", Args: []model.Object{model.Real(tz)}})
+	}
+	if !t.known || t.tc != tc {
+		ops = append(ops, content.Op{Name: "Tc", Args: []model.Object{model.Real(tc)}})
+	}
+	if !t.known || t.tw != tw {
+		ops = append(ops, content.Op{Name: "Tw", Args: []model.Object{model.Real(tw)}})
+	}
+	*t = textStateTracker{known: true, tr: tr, tz: tz, tc: tc, tw: tw}
+	return ops
 }

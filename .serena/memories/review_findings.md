@@ -1,69 +1,60 @@
-# gPDF — deep review findings (2026-10-31, commit 036d17f)
+# gPDF — deep review findings (2026-10-31, commit 036d17f; fixes 2026-10-31 on branch claude/project-thread-tv91nd)
 
 Status: open unless marked FIXED. "Verified" = reproduced with a hand-built PDF; "by reading" = from code inspection only.
-Baseline: build/vet/test/race all pass once go.sum exists. Coverage: doc 7.9%, security 22.6%, syntax/impl 26.3%,
-writer 27.5%, reader 42.8%; all `stream/*` filters, `font/*`, `model`, `xref`, `sign` have no tests; no fuzz tests.
+Every FIXED item has a regression test (see the test named in brackets). Interop checked with poppler 24.02
+(pdfinfo/pdftotext) and pypdf 6.17 (RC4-40/128, AES-128, AES-256 R5/R6 files open with user and owner password).
 
 ## Critical / high
-1. Verified — PNG/TIFF predictors (`/DecodeParms /Predictor`) are ignored by the generic filter pipeline
-   (`reader/reader_impl.go` applyFiltersWithLimits, `stream/flate`). Xref streams almost always use `/Predictor 12`,
-   so most PDF 1.5+ files fail to open (`object 1 0 R not in xref`). Only SMask image decoding handles predictors
-   (`reader/extract_images.go`). Writer keeps `/DecodeParms` while re-encoding without a predictor, so Save/Merge/Split
-   also corrupt predictor-encoded images.
-2. Verified — Untrusted `/Length` is used directly: `/Length 99999999999` → `make([]byte, length)` → fatal OOM
-   (unrecoverable, not a panic) in `syntax/impl/parser_impl.go` parseStream. Clamp to file size.
-3. Verified — `/Length` past end of file → parseStream loops forever: after `SetPosition` beyond EOF the tokenizer
-   returns `TokenEOF` with nil error and the `endstream` search loop never exits. Hang DoS.
-4. Verified — Indirect `/Length 5 0 R` (common in pdfTeX/Ghostscript output) → "stream missing Length"; text
-   extraction then returns "" with nil error. Too-short `/Length` also yields silent empty text (no endstream recovery).
-5. Verified — Wrong user password is accepted: R2/R3/R4 never check `/U`, so `OpenWithPassword(..., "WRONG")`
-   succeeds and returns garbage strings/streams. Owner password not supported at all.
-6. Verified — AES-256 ("V5/R6") is a custom PBKDF2(ID) scheme, not ISO 32000-2 Algorithm 2.A/2.B (no UE/OE/Perms,
-   no SHA-256/384/512 hash loop). It cannot open real AES-256 PDFs, and poppler rejects gPDF's own output
-   ("Invalid encryption key length"; `cmd/pdf20demo` output unreadable). R5 is advertised but rejected. `/U` is an
-   unsalted SHA-256(password‖ID) stored in the file, which makes offline brute force fast and the PBKDF2 pointless.
-7. Verified — RC4 output (`SaveWithPassword`) is rejected by poppler ("Weird encryption info"): Encrypt dict lacks
-   `/V`, `/Length`; trailer `/ID` has 1 element (spec: 2); 40-bit RC4 in a `%PDF-2.0` file (deprecated in 2.0).
-8. Verified — Save fails for any source with generation > 0 objects: writer resolves every object as `Ref{n,0}`
-   (`writer/writer_impl.go` Write) → "generation mismatch".
-9. Verified — Saving an opened encrypted document: AES path fails ("invalid padding length", the Encrypt dict is
-   run through the decryptor by Resolve); RC4 path writes a garbled Encrypt dict and keeps `/Encrypt` in the trailer.
-   Old trailer keys (`/Prev`, `/XRefStm`, `/Encrypt`) are copied verbatim on Save.
-10. Verified — Extract/Split/Merge copy the whole source page tree: the cloner follows the page's `/Parent` before it
-    is deleted (`doc/cloner.go`, `doc/split.go`, `doc/merge.go`). Extracting 1 of 3 pages kept all 3 content streams.
-    Fix: drop `/Parent` (and usually `/StructParents`, `/B`) before cloning.
-11. By reading — R4 ignores `/EncryptMetadata false` (key derivation must append 0xFFFFFFFF) → such files decrypt wrong.
+1. FIXED — /DecodeParms predictors ignored. New `stream/predictor` (PNG 10-15, TIFF 2, all bit depths) applied by
+   `reader.applyFilterChain` after Flate/LZW; writer drops predictor parms when it re-encodes. [TestReadXRefStreamWithPNGPredictor]
+2. FIXED — huge /Length OOM: parseStream clamps to the file. [TestStreamLengthHardening]
+3. FIXED — /Length past EOF hang: endstream must follow, else scan for endstream, else error. [TestStreamWithoutEndstreamFails]
+4. FIXED — indirect /Length via `impl.NewParserWithLengthResolver` (documentCore.resolveLength, non-recursive);
+   short/missing/negative /Length recover by endstream scan. [TestStreamLengthHardening]
+5. FIXED — wrong password accepted: R2-R4 check /U (Alg. 4/5), owner password via Alg. 7, `security.ErrWrongPassword`.
+   [TestRC4WrongPasswordRejectedAndOwnerAccepted, TestEncryptedOutputInteroperatesAndResaves]
+6. FIXED — AES-256 is now ISO 32000-2 R6 (Alg. 2.A/2.B, U/UE/O/OE/Perms) for read and write; R5 read. x/crypto dropped.
+   [TestAES256R6UserOwnerAndWrongPassword]
+7. FIXED — RC4 output: V2 R3 128-bit, /Length, 2-element /ID, header %PDF-1.7. Poppler opens it.
+8. FIXED — Save with gen > 0: writer uses `Generation(num)` (documentCore) via `writer.objectRef`. [TestSaveKeepsNonZeroGenerations]
+9. FIXED — saving opened encrypted docs: Encrypt dict never decrypted, skipped on write; clean trailer
+   (Root/Info/ID/Size only); XRef/ObjStm objects skipped. [TestSaveFromXRefStreamWritesCleanTrailer]
+10. FIXED — Extract/Split/Merge copied the page tree: `doc/page_copier.go` pre-assigns selected pages, drops
+    /Parent /StructParents /B, cloner nulls refs to unselected Page/Pages. `model.Page.Ref` added. [TestExtractCopiesOnlySelectedPage]
+11. FIXED — R4 /EncryptMetadata false key derivation; metadata stream left unencrypted. [TestR4EncryptMetadataFalseChangesKey]
 
 ## Medium
-- Tokenizer (`syntax/impl/tokenizer.go`): stray `>` returns a zero Token (= TokenEOF) → silent truncation;
-  comments are skipped without advancing `pos` (CurrentOffset drifts); 1-digit octal escapes (`\5`) dropped;
-  odd-length hex strings lose the last nibble (spec: pad with 0); form feed (0x0C) not whitespace; `\` + CRLF
-  continuation leaves the LF; `#xx` not decoded as first name char; number parse errors become 0.
-- `ParseObject` "n gen X" (X not obj/R) loses `gen` (only `tok3` is pushed back).
-- Xref repair (`reader/xref_repair.go`): keeps the FIRST definition of each object (incremental updates need the
-  last) and returns an empty trailer (no `/Root`), so repaired files still fail to open. Should scan for
-  `trailer`/`/Type /Catalog`.
-- Hybrid files: trailer `/XRefStm` is ignored.
-- By reading — LZWDecode uses Go `compress/lzw`, which has no PDF `/EarlyChange` handling; likely wrong at code-width
-  boundaries (pdfcpu uses hhrutter/lzw for this reason).
-- Crypt filter with a non-Identity name passes still-encrypted bytes through.
-- Writer: `Real` written with `%g` → exponent form (`1e+06`) which is not PDF syntax; Filter arrays are declared
-  but not encoded (content written decoded); encode errors silently write raw bytes under the declared filter;
-  dict key order is random (non-reproducible output); many write errors ignored (`writeDict`, `writeDictEnc`).
-- Text extraction (`reader/extract.go`): no `/Encoding` / `/Differences` / glyph-name support for simple fonts
-  (falls back to UTF-8-or-WinAnsi guess); ToUnicode parser is line-based (one mapping per line, breaks on compact
-  or CR-only CMaps, ignores codespace ranges, bfrange with multi-code-point base increments only the first rune).
-- `doc.Merge`/`splitOne`: if Info clone fails, `trailer.Dict` stays nil → panic on `Root` assignment.
-- `sign.Sign`/`SignFile` are pass-through stubs that return nil — callers think the file was signed.
-- Object-stream cache entries bypass `cacheOrder` (never evicted); compressed-object header object numbers not checked.
+- FIXED — tokenizer: stray `>`/`)`/`{`/`}` (no more EOF or infinite loop), comment offsets, 1-digit octal, odd hex,
+  form feed, `\`+CRLF, `#xx` first char, lenient numbers. Parser: "n gen X" keeps gen, missing endobj accepted,
+  nesting depth limit 512. [syntax/impl/regression_test.go, FuzzParseObject]
+- FIXED — xref repair keeps LAST definition, reads `trailer` dicts, else /Root from XRef stream dict or last Catalog,
+  registers ObjStm objects; tolerant mode also repairs when the trailer has no /Root. [tests/reader/repair_regression_test.go]
+- FIXED — hybrid /XRefStm merged. [TestHybridFileReadsXRefStm]
+- FIXED — LZW /EarlyChange: own codec in `stream/lzw` (spec example passes). [stream/lzw tests]
+- FIXED — named /Crypt stream filters (CryptFilterDecryptor); HexStrings are decrypted/encrypted too.
+- FIXED — writer: reals via `model.FormatReal` (also in content encoder), filter arrays encoded, failed encode writes
+  raw without /Filter, sorted keys, errors propagated, dangling refs written as null (reader/file uses ValidateGraph=false).
+- FIXED — text: simple-font /Encoding + /Differences (`reader/text_encoding.go`, Standard/WinAnsi/MacRoman, glyph names,
+  uniXXXX); token-based ToUnicode parser with codespace ranges and correct multi-char bfrange. [reader/text_encoding_test.go]
+- FIXED — Merge/split nil trailer panic; page-tree /Kids cycles bounded.
+- FIXED — `sign.Sign` now returns `sign.ErrNotImplemented` and writes nothing. [TestSignReportsNotImplemented]
+- FIXED — ObjStm cache entries go through cacheOrder; header object number checked. [TestExtractFromObjectStreamChecksObjectNumber]
+- FIXED — letter spacing leak: builder tracks Tc/Tw/Tz/Tr per stream (`textStateTracker`). [TestLetterSpacingDoesNotLeakIntoNextRun]
+  proteus-converter's `minSpacing` workaround in render/gpdf.go can be removed once it uses this gPDF version.
+- FIXED — link annotations get /Border [0 0 0]. [TestLinkAnnotationsHaveNoBorder]
+- FIXED (found 2026-10-31) — SaveLinearized: fixed-width /L /H /E /T, real object number for the parameter dict,
+  correct first-section xref and /Prev. [TestSaveLinearizedIsWellFormed]
+- FIXED (found 2026-10-31) — reader/file.Document finalizer could close the file while a method was still reading
+  (e.g. SaveLinearized on a large file: "file already closed"). Finalizer removed.
+
+## Still open
+- SaveLinearized writes no hint stream (poppler warns "Hints table length ... invalid"; files still open).
+- AES-256 passwords are not SASLprep-normalised (ASCII and NFC input fine).
+- Reader decodes every stream on Resolve; a stream with an unsupported filter makes Resolve (and Save) fail.
+- Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
+- Xref table parser assumes 20-byte entries.
+- Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).
 
 ## Repo / process
-- FIXED 2026-10-31 — `go.sum` was gitignored: fresh clone failed `go build`/`go test` ("missing go.sum entry"),
-  including CodeQL autobuild.
-- No CI runs `go test` (only `.github/workflows/codeql.yml`).
-- Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/`.
-- Builder output (`cmd/example`, `cmd/cv`, `cmd/quotation`) opens cleanly in poppler and text extracts correctly.
-
-## Suggested fix order
-1 (predictors) → 2/3/4 (stream length hardening + fuzz test for parser) → 10 (cloner /Parent) → 8/9 (writer gens,
-trailer hygiene) → 5/6/7/11 (implement ISO 32000-2 Standard security handler properly, validate U/O) → medium items.
+- FIXED 2026-10-31 — `go.sum` was gitignored.
+- FIXED 2026-10-31 — CI: `.github/workflows/go.yml` runs gofmt, vet, `go test -race` (with poppler installed).

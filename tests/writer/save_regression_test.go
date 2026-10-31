@@ -3,6 +3,7 @@ package writer_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,5 +170,59 @@ func TestSaveFileWithDanglingReference(t *testing.T) {
 	}
 	if got := text(t, open(t, out, "")); !strings.Contains(got, "Dangling") {
 		t.Fatalf("text = %q", got)
+	}
+}
+
+type seekBuffer struct {
+	data []byte
+	pos  int64
+}
+
+func (s *seekBuffer) Write(p []byte) (int, error) {
+	end := s.pos + int64(len(p))
+	if end > int64(len(s.data)) {
+		s.data = append(s.data, make([]byte, end-int64(len(s.data)))...)
+	}
+	copy(s.data[s.pos:], p)
+	s.pos = end
+	return len(p), nil
+}
+
+func (s *seekBuffer) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case 1:
+		offset += s.pos
+	case 2:
+		offset += int64(len(s.data))
+	}
+	s.pos = offset
+	return offset, nil
+}
+
+// Regression: SaveLinearized patched "/L 0000000000" with a shorter number (leaving
+// garbage in the dictionary), used object number 0 and wrote a wrong /Prev offset.
+func TestSaveLinearizedIsWellFormed(t *testing.T) {
+	d, err := doc.New().PageSize(300, 300).AddPage().Flow(doc.FlowOptions{Margin: 36}).Paragraph("Page one").End().
+		AddPage().Flow(doc.FlowOptions{Margin: 36}).Paragraph("Page two").End().Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ws seekBuffer
+	if err := d.SaveLinearized(&ws); err != nil {
+		t.Fatal(err)
+	}
+	head := string(ws.data[:min(300, len(ws.data))])
+	if strings.Contains(head, "\n0 0 obj") {
+		t.Fatal("linearization dictionary uses object number 0")
+	}
+	if !strings.Contains(head, "/L "+fmt.Sprintf("%010d", len(ws.data))) {
+		t.Fatalf("/L does not hold the file length:\n%s", head)
+	}
+	got := text(t, open(t, ws.data, ""))
+	if !strings.Contains(got, "Page one") || !strings.Contains(got, "Page two") {
+		t.Fatalf("text = %q", got)
+	}
+	if s, ok := popplerText(t, ws.data); ok && !strings.Contains(s, "Page two") {
+		t.Fatalf("poppler text = %q", s)
 	}
 }

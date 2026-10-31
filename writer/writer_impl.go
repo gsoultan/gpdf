@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"math"
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/gsoultan/gpdf/model"
 	"github.com/gsoultan/gpdf/security"
@@ -603,20 +601,8 @@ func (pw *PDFWriter) encodeStreamContent(v *model.Stream) []byte {
 	return data
 }
 
-// FormatReal formats a PDF real number. PDF has no exponent syntax, so values are written
-// in plain decimal notation with at most 6 fractional digits (enough for 1/1000 pt).
-func FormatReal(f float64) string {
-	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return "0"
-	}
-	s := strconv.FormatFloat(f, 'f', 6, 64)
-	s = strings.TrimRight(s, "0")
-	s = strings.TrimSuffix(s, ".")
-	if s == "-0" || s == "" {
-		return "0"
-	}
-	return s
-}
+// FormatReal formats a PDF real number in plain decimal notation (see model.FormatReal).
+func FormatReal(f float64) string { return model.FormatReal(f) }
 
 func (pw *PDFWriter) writeHexString(w io.Writer, b []byte) {
 	io.WriteString(w, "<")

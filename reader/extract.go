@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"maps"
-	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -417,22 +415,81 @@ func extractTextFromXObject(
 	extractTextFromOps(out, nestedOps, src, parser, nestedResources, visited, fontDecoders)
 }
 
+// toUnicodeDecoder maps character codes of a font to text, from the font's /ToUnicode
+// CMap and, for simple fonts, from its /Encoding (used for codes the CMap does not map).
 type toUnicodeDecoder struct {
 	mapping    map[string]string
 	maxCodeLen int
+	codespace  []codeRange
+	simple     *[256]string
+}
+
+// codeRange is one codespace range: codes of len(lo) bytes between lo and hi byte-wise.
+type codeRange struct {
+	lo, hi []byte
+}
+
+func (r codeRange) contains(code []byte) bool {
+	if len(code) != len(r.lo) {
+		return false
+	}
+	for i, b := range code {
+		if b < r.lo[i] || b > r.hi[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// codeLength returns the length of the code at the start of data per the codespace ranges.
+func (d *toUnicodeDecoder) codeLength(data []byte) int {
+	for n := 1; n <= 4 && n <= len(data); n++ {
+		for _, r := range d.codespace {
+			if r.contains(data[:n]) {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+func (d *toUnicodeDecoder) simpleText(b byte) string {
+	if d.simple != nil {
+		return d.simple[b]
+	}
+	return string(rune(b))
 }
 
 func (d *toUnicodeDecoder) decode(data []byte) string {
 	if len(data) == 0 {
 		return ""
 	}
-	if d == nil || len(d.mapping) == 0 || d.maxCodeLen <= 0 {
+	if d == nil {
 		return decodeRawTextBytes(data)
 	}
-
 	var out strings.Builder
 	out.Grow(len(data))
+	if len(d.mapping) == 0 || d.maxCodeLen <= 0 {
+		if d.simple == nil {
+			return decodeRawTextBytes(data)
+		}
+		for _, b := range data {
+			out.WriteString(d.simple[b])
+		}
+		return out.String()
+	}
 	for i := 0; i < len(data); {
+		if len(d.codespace) > 0 {
+			if n := d.codeLength(data[i:]); n > 0 {
+				if text, ok := d.mapping[string(data[i:i+n])]; ok {
+					out.WriteString(text)
+				} else if n == 1 {
+					out.WriteString(d.simpleText(data[i]))
+				}
+				i += n
+				continue
+			}
+		}
 		matched := false
 		limit := min(d.maxCodeLen, len(data)-i)
 		for codeLen := limit; codeLen >= 1; codeLen-- {
@@ -444,7 +501,7 @@ func (d *toUnicodeDecoder) decode(data []byte) string {
 			}
 		}
 		if !matched {
-			out.WriteRune(rune(data[i]))
+			out.WriteString(d.simpleText(data[i]))
 			i++
 		}
 	}
@@ -608,159 +665,218 @@ func resolveFontDecoder(
 		}
 	}
 
-	toUnicodeObj, ok := fontDict[model.Name("ToUnicode")]
-	if !ok {
-		if fontRef != nil {
-			cache[*fontRef] = nil
+	var decoder *toUnicodeDecoder
+	if toUnicodeObj, ok := fontDict[model.Name("ToUnicode")]; ok {
+		if toUnicodeStream, _, ok := resolveStreamObject(src, toUnicodeObj); ok && toUnicodeStream != nil {
+			decoder = parseToUnicodeDecoder(toUnicodeStream.Content)
 		}
-		return nil
 	}
-
-	toUnicodeStream, _, ok := resolveStreamObject(src, toUnicodeObj)
-	if !ok || toUnicodeStream == nil {
-		if fontRef != nil {
-			cache[*fontRef] = nil
+	// Simple fonts: codes without a ToUnicode mapping are decoded through /Encoding
+	// and /Differences, instead of being guessed as UTF-8 or WinAnsi.
+	if _, explicit := fontDict[model.Name("Encoding")]; explicit || decoder == nil {
+		if table := simpleFontEncoding(src, fontDict); table != nil && (explicit || isStandardTextFont(fontDict)) {
+			if decoder == nil {
+				decoder = &toUnicodeDecoder{}
+			}
+			decoder.simple = table
 		}
-		return nil
 	}
-
-	decoder := parseToUnicodeDecoder(toUnicodeStream.Content)
 	if fontRef != nil {
 		cache[*fontRef] = decoder
 	}
 	return decoder
 }
 
+// isStandardTextFont reports whether a font without /Encoding uses a known built-in
+// encoding (a non-symbolic standard 14 Type1 font, Standard encoding).
+func isStandardTextFont(fontDict model.Dict) bool {
+	if st, _ := fontDict[model.Name("Subtype")].(model.Name); st != "Type1" {
+		return false
+	}
+	name, _ := fontDict[model.Name("BaseFont")].(model.Name)
+	switch name {
+	case "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
+		"Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
+		"Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique":
+		return true
+	}
+	return false
+}
+
+// cmapToken is a lexical element of a CMap program.
+type cmapToken struct {
+	kind byte // 'h' hex string, 'w' word, '[' and ']'
+	text string
+	hex  []byte
+}
+
+// tokenizeCMap splits a CMap into tokens. It does not depend on line breaks, so compact
+// (single-line) and CR-only CMaps parse the same as conventional ones.
+func tokenizeCMap(content []byte) []cmapToken {
+	var toks []cmapToken
+	for i := 0; i < len(content); {
+		c := content[i]
+		switch {
+		case isWhitespaceByte(c) || c == 0 || c == '\f':
+			i++
+		case c == '%':
+			for i < len(content) && content[i] != '\n' && content[i] != '\r' {
+				i++
+			}
+		case c == '<':
+			if i+1 < len(content) && content[i+1] == '<' {
+				toks = append(toks, cmapToken{kind: 'w', text: "<<"})
+				i += 2
+				continue
+			}
+			end := bytes.IndexByte(content[i+1:], '>')
+			if end < 0 {
+				return toks
+			}
+			if b, ok := decodeHexString(string(content[i+1 : i+1+end])); ok {
+				toks = append(toks, cmapToken{kind: 'h', hex: b})
+			} else {
+				toks = append(toks, cmapToken{kind: 'h'})
+			}
+			i += end + 2
+		case c == '[' || c == ']':
+			toks = append(toks, cmapToken{kind: c})
+			i++
+		case c == '(':
+			// Literal strings are rare in ToUnicode CMaps; treat the bytes as the value.
+			depth, j := 1, i+1
+			var sb []byte
+			for j < len(content) && depth > 0 {
+				switch content[j] {
+				case '(':
+					depth++
+				case ')':
+					depth--
+				case '\\':
+					j++
+				}
+				if depth > 0 && j < len(content) {
+					sb = append(sb, content[j])
+				}
+				j++
+			}
+			toks = append(toks, cmapToken{kind: 'h', hex: sb})
+			i = j
+		default:
+			j := i
+			for j < len(content) && !isWhitespaceByte(content[j]) && !strings.ContainsRune("<>[]()%/", rune(content[j])) {
+				j++
+			}
+			if j == i {
+				j++ // '/', '>' or other delimiter
+				for j < len(content) && !isWhitespaceByte(content[j]) && !strings.ContainsRune("<>[]()%/", rune(content[j])) {
+					j++
+				}
+			}
+			toks = append(toks, cmapToken{kind: 'w', text: string(content[i:j])})
+			i = j
+		}
+	}
+	return toks
+}
+
+// parseToUnicodeDecoder parses the codespace, bfchar and bfrange sections of a ToUnicode CMap.
 func parseToUnicodeDecoder(content []byte) *toUnicodeDecoder {
 	if len(content) == 0 {
 		return nil
 	}
-
 	decoder := &toUnicodeDecoder{mapping: make(map[string]string)}
-	mode := ""
-	remaining := 0
-
-	for line := range strings.SplitSeq(string(content), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	toks := tokenizeCMap(content)
+	isHex := func(i int) bool { return i < len(toks) && toks[i].kind == 'h' }
+	for i := 0; i < len(toks); i++ {
+		if toks[i].kind != 'w' {
 			continue
 		}
-
-		if n, ok := parseCMapBeginCount(line, "beginbfchar"); ok {
-			mode = "bfchar"
-			remaining = n
-			continue
-		}
-		if n, ok := parseCMapBeginCount(line, "beginbfrange"); ok {
-			mode = "bfrange"
-			remaining = n
-			continue
-		}
-		if line == "endbfchar" || line == "endbfrange" {
-			mode = ""
-			remaining = 0
-			continue
-		}
-		if remaining <= 0 {
-			continue
-		}
-
-		switch mode {
-		case "bfchar":
-			parseBFCharLine(decoder, line)
-			remaining--
-		case "bfrange":
-			parseBFRangeLine(decoder, line)
-			remaining--
+		switch toks[i].text {
+		case "begincodespacerange":
+			for i++; i+1 < len(toks) && isHex(i) && isHex(i+1); i += 2 {
+				lo, hi := toks[i].hex, toks[i+1].hex
+				if len(lo) > 0 && len(lo) == len(hi) && len(lo) <= 4 {
+					decoder.codespace = append(decoder.codespace, codeRange{lo: lo, hi: hi})
+				}
+			}
+		case "beginbfchar":
+			for i++; i+1 < len(toks) && isHex(i) && isHex(i+1); i += 2 {
+				src := toks[i].hex
+				if len(src) == 0 || len(src) > 4 {
+					continue
+				}
+				decoder.mapping[string(src)] = decodeCMapString(toks[i+1].hex)
+				decoder.maxCodeLen = max(decoder.maxCodeLen, len(src))
+			}
+		case "beginbfrange":
+			for i++; i+2 < len(toks) && isHex(i) && isHex(i+1); {
+				lo, hi := toks[i].hex, toks[i+1].hex
+				if toks[i+2].kind == '[' {
+					j := i + 3
+					var dsts [][]byte
+					for j < len(toks) && toks[j].kind == 'h' {
+						dsts = append(dsts, toks[j].hex)
+						j++
+					}
+					addBFRange(decoder, lo, hi, nil, dsts)
+					if j < len(toks) && toks[j].kind == ']' {
+						j++
+					}
+					i = j
+					continue
+				}
+				if !isHex(i + 2) {
+					break
+				}
+				addBFRange(decoder, lo, hi, toks[i+2].hex, nil)
+				i += 3
+			}
 		}
 	}
-
 	if len(decoder.mapping) == 0 {
 		return nil
 	}
 	return decoder
 }
 
-func parseCMapBeginCount(line string, marker string) (int, bool) {
-	if !strings.HasSuffix(line, marker) {
-		return 0, false
-	}
-	fields := slices.Collect(strings.FieldsSeq(line))
-	if len(fields) == 0 {
-		return 0, false
-	}
-	n, err := strconv.Atoi(fields[0])
-	if err != nil || n <= 0 {
-		return 0, false
-	}
-	return n, true
-}
+// maxBFRange bounds the codes one bfrange line may define (hostile CMaps).
+const maxBFRange = 1 << 16
 
-func parseBFCharLine(decoder *toUnicodeDecoder, line string) {
-	codes := parseHexCodes(line)
-	if len(codes) < 2 {
+// addBFRange maps codes lo..hi either to consecutive values starting at base (the last
+// UTF-16 code unit is incremented, so multi-character bases keep their prefix) or, when
+// dsts is given, to the listed destination strings.
+func addBFRange(decoder *toUnicodeDecoder, lo, hi, base []byte, dsts [][]byte) {
+	if len(lo) == 0 || len(lo) != len(hi) || len(lo) > 4 {
 		return
 	}
-	decoder.mapping[string(codes[0])] = decodeCMapString(codes[1])
-	decoder.maxCodeLen = max(decoder.maxCodeLen, len(codes[0]))
-}
-
-func parseBFRangeLine(decoder *toUnicodeDecoder, line string) {
-	codes := parseHexCodes(line)
-	if len(codes) < 3 || len(codes[0]) == 0 || len(codes[0]) != len(codes[1]) {
+	start, ok1 := bytesToInt(lo)
+	end, ok2 := bytesToInt(hi)
+	if !ok1 || !ok2 || end < start || end-start >= maxBFRange {
 		return
 	}
-
-	start, ok := bytesToInt(codes[0])
-	if !ok {
-		return
-	}
-	end, ok := bytesToInt(codes[1])
-	if !ok || end < start {
-		return
-	}
-	count := end - start + 1
-	codeLen := len(codes[0])
+	codeLen := len(lo)
 	decoder.maxCodeLen = max(decoder.maxCodeLen, codeLen)
-
-	if strings.Contains(line, "[") {
-		available := len(codes) - 2
-		for i := range min(count, available) {
-			src := intToBytes(start+i, codeLen)
-			decoder.mapping[string(src)] = decodeCMapString(codes[2+i])
+	if dsts != nil {
+		for i := range min(end-start+1, len(dsts)) {
+			decoder.mapping[string(intToBytes(start+i, codeLen))] = decodeCMapString(dsts[i])
 		}
 		return
 	}
-
-	baseRunes := []rune(decodeCMapString(codes[2]))
-	if len(baseRunes) == 0 {
+	if len(base) == 0 {
 		return
 	}
-	base := baseRunes[0]
-	for i := range count {
-		src := intToBytes(start+i, codeLen)
-		decoder.mapping[string(src)] = string(base + rune(i))
+	for i := range end - start + 1 {
+		dst := bytes.Clone(base)
+		// Add i to the trailing bytes of the destination (big-endian), as the spec defines.
+		carry := i
+		for k := len(dst) - 1; k >= 0 && carry > 0; k-- {
+			sum := int(dst[k]) + carry
+			dst[k] = byte(sum)
+			carry = sum >> 8
+		}
+		decoder.mapping[string(intToBytes(start+i, codeLen))] = decodeCMapString(dst)
 	}
-}
-
-func parseHexCodes(line string) [][]byte {
-	out := make([][]byte, 0, 4)
-	for {
-		start := strings.IndexByte(line, '<')
-		if start < 0 {
-			break
-		}
-		line = line[start+1:]
-		end := strings.IndexByte(line, '>')
-		if end < 0 {
-			break
-		}
-		if decoded, ok := decodeHexString(line[:end]); ok {
-			out = append(out, decoded)
-		}
-		line = line[end+1:]
-	}
-	return out
 }
 
 func decodeHexString(hexText string) ([]byte, bool) {
