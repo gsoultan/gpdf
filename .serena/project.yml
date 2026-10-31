@@ -1,0 +1,16 @@
+# Serena project configuration for gPDF.
+# Memories live in .serena/memories/ and are read at the start of every task
+# and updated when a task finishes (see CLAUDE.md).
+project_name: "gpdf"
+languages:
+  - go
+encoding: "utf-8"
+ignore_all_files_in_gitignore: true
+ignored_paths:
+  - graphify-out
+  - "*.pdf"
+read_only: false
+excluded_tools: []
+initial_prompt: |
+  gPDF is a pure-Go PDF library (read, extract, search/replace, build, merge/split, encrypt).
+  Read the memories `project_overview`, `architecture`, and `review_findings` before changing code.
