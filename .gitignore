@@ -5,7 +5,6 @@
 docs/PDF_2.0_implementation_plan.md
 *.exe
 .idea
-go.sum
 /cv_output.pdf
 /example.pdf
 /docs/PDF_2.0_coverage_notes.md
@@ -16,3 +15,7 @@ go.sum
 .idea
 .cursor
 
+
+# graphify: keep graph.json, GRAPH_REPORT.md, manifest; regenerate the rest
+graphify-out/cache/
+graphify-out/graph.html
