@@ -1,6 +1,8 @@
 package doc
 
 import (
+	"fmt"
+
 	"github.com/gsoultan/gpdf/doc/image"
 	"github.com/gsoultan/gpdf/doc/style"
 	"github.com/gsoultan/gpdf/model"
@@ -565,42 +567,19 @@ func (o *ImageObject) Draw() *Page {
 		o.pt.Y = ps.CurrY - o.h
 	}
 
-	data := o.data
-	pxW, pxH := o.pxW, o.pxH
-	cs := o.colorSpace
-	bpc := o.bitsPerComp
-	isJPEG := o.isJPEG
-
-	// If it's a PNG, we must decode it to raw RGB/RGBA because PDF doesn't support PNG directly
+	run := imageRun{
+		X: o.pt.X, Y: o.pt.Y, WidthPt: o.w, HeightPt: o.h,
+		Raw: o.data, WidthPx: o.pxW, HeightPx: o.pxH,
+		BitsPerComponent: o.bitsPerComp, ColorSpace: o.colorSpace, IsJPEG: o.isJPEG,
+	}
+	// PDF has no PNG filter: decode it to raw samples plus an alpha soft mask.
 	if o.isPNG {
-		if raw, w, h, colorspace, err := image.DecodePNGToRaw(o.data); err == nil {
-			data = raw
-			pxW = w
-			pxH = h
-			cs = colorspace
-			bpc = 8
+		if err := run.SetPNG(o.data); err != nil {
+			o.page.builder.setErr(fmt.Errorf("image: %w", err))
+			return o.page
 		}
 	}
-
-	if cs == "" {
-		cs = "DeviceRGB"
-	}
-	if bpc <= 0 {
-		bpc = 8
-	}
-
-	o.page.builder.DrawImage(o.pt.X, o.pt.Y, o.w, o.h, data, pxW, pxH, bpc, cs)
-	// Set IsJPEG if detected
-	if isJPEG {
-		idx := o.page.pageIndex
-		if len(o.page.builder.pc.pages) > idx {
-			runs := o.page.builder.pc.pages[idx].ImageRuns
-			if len(runs) > 0 {
-				runs[len(runs)-1].IsJPEG = true
-				o.page.builder.pc.pages[idx].ImageRuns = runs
-			}
-		}
-	}
+	o.page.builder.addImageRun(o.page.pageIndex, run)
 
 	if !o.atSet {
 		ps.CurrY -= o.h

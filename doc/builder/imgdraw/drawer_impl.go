@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/gsoultan/gpdf/doc/builder"
-	imgpkg "github.com/gsoultan/gpdf/doc/image"
 	"github.com/gsoultan/gpdf/doc/tagged"
 )
 
@@ -41,7 +40,7 @@ func (d *drawer) DrawImage(pa builder.PageAccess, x, y, widthPt, heightPt float6
 	if p == nil {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: raw, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: defaultBPC(bitsPerComponent), ColorSpace: defaultColorSpace(colorSpace),
@@ -53,7 +52,7 @@ func (d *drawer) DrawJPEG(pa builder.PageAccess, x, y, widthPt, heightPt float64
 	if p == nil || len(jpegData) == 0 {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: jpegData, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: 8, ColorSpace: defaultColorSpace(colorSpace), IsJPEG: true,
@@ -65,18 +64,12 @@ func (d *drawer) DrawPNG(pa builder.PageAccess, x, y, widthPt, heightPt float64,
 	if p == nil || len(pngData) == 0 {
 		return nil
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	var run builder.ImageRun
+	if err := run.SetPNG(pngData); err != nil {
 		return fmt.Errorf("DrawPNG: %w", err)
 	}
-	if w == 0 || h == 0 {
-		return fmt.Errorf("DrawPNG: invalid dimensions %dx%d", w, h)
-	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
-		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
-		Raw: raw, WidthPx: w, HeightPx: h,
-		BitsPerComponent: 8, ColorSpace: colorSpace,
-	})
+	run.X, run.Y, run.WidthPt, run.HeightPt = x, y, widthPt, heightPt
+	p.AddImage(run)
 	return nil
 }
 
@@ -85,7 +78,7 @@ func (d *drawer) DrawCircularImage(pa builder.PageAccess, x, y, widthPt, heightP
 	if p == nil {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: raw, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: defaultBPC(bitsPerComponent), ColorSpace: defaultColorSpace(colorSpace),
@@ -98,7 +91,7 @@ func (d *drawer) DrawCircularJPEG(pa builder.PageAccess, x, y, widthPt, heightPt
 	if p == nil || len(jpegData) == 0 {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: jpegData, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: 8, ColorSpace: defaultColorSpace(colorSpace), IsJPEG: true,
@@ -111,19 +104,13 @@ func (d *drawer) DrawCircularPNG(pa builder.PageAccess, x, y, widthPt, heightPt 
 	if p == nil || len(pngData) == 0 {
 		return nil
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	var run builder.ImageRun
+	if err := run.SetPNG(pngData); err != nil {
 		return fmt.Errorf("DrawCircularPNG: %w", err)
 	}
-	if w == 0 || h == 0 {
-		return fmt.Errorf("DrawCircularPNG: invalid dimensions %dx%d", w, h)
-	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
-		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
-		Raw: raw, WidthPx: w, HeightPx: h,
-		BitsPerComponent: 8, ColorSpace: colorSpace,
-		ClipCircle: true, ClipCX: cx, ClipCY: cy, ClipR: radius,
-	})
+	run.X, run.Y, run.WidthPt, run.HeightPt = x, y, widthPt, heightPt
+	run.ClipCircle, run.ClipCX, run.ClipCY, run.ClipR = true, cx, cy, radius
+	p.AddImage(run)
 	return nil
 }
 
@@ -132,7 +119,7 @@ func (d *drawer) DrawImageWithOpacity(pa builder.PageAccess, x, y, widthPt, heig
 	if p == nil {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: raw, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: defaultBPC(bitsPerComponent), ColorSpace: defaultColorSpace(colorSpace),
@@ -145,7 +132,7 @@ func (d *drawer) DrawJPEGWithOpacity(pa builder.PageAccess, x, y, widthPt, heigh
 	if p == nil || len(jpegData) == 0 {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: jpegData, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: 8, ColorSpace: defaultColorSpace(colorSpace), IsJPEG: true,
@@ -158,19 +145,13 @@ func (d *drawer) DrawPNGWithOpacity(pa builder.PageAccess, x, y, widthPt, height
 	if p == nil || len(pngData) == 0 {
 		return nil
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	var run builder.ImageRun
+	if err := run.SetPNG(pngData); err != nil {
 		return fmt.Errorf("DrawPNGWithOpacity: %w", err)
 	}
-	if w == 0 || h == 0 {
-		return fmt.Errorf("DrawPNGWithOpacity: invalid dimensions %dx%d", w, h)
-	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
-		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
-		Raw: raw, WidthPx: w, HeightPx: h,
-		BitsPerComponent: 8, ColorSpace: colorSpace,
-		Opacity: opacity,
-	})
+	run.X, run.Y, run.WidthPt, run.HeightPt = x, y, widthPt, heightPt
+	run.Opacity = opacity
+	p.AddImage(run)
 	return nil
 }
 
@@ -179,7 +160,7 @@ func (d *drawer) DrawJPEGRotated(pa builder.PageAccess, x, y, widthPt, heightPt 
 	if p == nil || len(jpegData) == 0 {
 		return
 	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: jpegData, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: 8, ColorSpace: defaultColorSpace(colorSpace), IsJPEG: true,
@@ -192,19 +173,13 @@ func (d *drawer) DrawPNGRotated(pa builder.PageAccess, x, y, widthPt, heightPt f
 	if p == nil || len(pngData) == 0 {
 		return nil
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	var run builder.ImageRun
+	if err := run.SetPNG(pngData); err != nil {
 		return fmt.Errorf("DrawPNGRotated: %w", err)
 	}
-	if w == 0 || h == 0 {
-		return fmt.Errorf("DrawPNGRotated: invalid dimensions %dx%d", w, h)
-	}
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
-		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
-		Raw: raw, WidthPx: w, HeightPx: h,
-		BitsPerComponent: 8, ColorSpace: colorSpace,
-		RotateDeg: rotateDeg,
-	})
+	run.X, run.Y, run.WidthPt, run.HeightPt = x, y, widthPt, heightPt
+	run.RotateDeg = rotateDeg
+	p.AddImage(run)
 	return nil
 }
 
@@ -214,7 +189,7 @@ func (d *drawer) DrawTaggedFigure(pa builder.PageAccess, pageIndex int, x, y, wi
 	}
 	mcid := pa.NextMCID(pageIndex)
 	p := pa.PageAt(pageIndex)
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: raw, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: defaultBPC(bitsPerComponent), ColorSpace: defaultColorSpace(colorSpace),
@@ -229,7 +204,7 @@ func (d *drawer) DrawTaggedJPEG(pa builder.PageAccess, pageIndex int, x, y, widt
 	}
 	mcid := pa.NextMCID(pageIndex)
 	p := pa.PageAt(pageIndex)
-	p.ImageRuns = append(p.ImageRuns, builder.ImageRun{
+	p.AddImage(builder.ImageRun{
 		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
 		Raw: jpegData, WidthPx: widthPx, HeightPx: heightPx,
 		BitsPerComponent: 8, ColorSpace: defaultColorSpace(colorSpace), IsJPEG: true,
@@ -242,12 +217,13 @@ func (d *drawer) DrawTaggedPNG(pa builder.PageAccess, pageIndex int, x, y, width
 	if !pa.ValidPageIndex(pageIndex) || len(pngData) == 0 {
 		return tagged.Figure{}, nil
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	var run builder.ImageRun
+	if err := run.SetPNG(pngData); err != nil {
 		return tagged.Figure{}, fmt.Errorf("DrawTaggedPNG: %w", err)
 	}
-	if w == 0 || h == 0 {
-		return tagged.Figure{}, fmt.Errorf("DrawTaggedPNG: invalid dimensions %dx%d", w, h)
-	}
-	return d.DrawTaggedFigure(pa, pageIndex, x, y, widthPt, heightPt, raw, w, h, 8, colorSpace, alt), nil
+	mcid := pa.NextMCID(pageIndex)
+	run.X, run.Y, run.WidthPt, run.HeightPt = x, y, widthPt, heightPt
+	run.MCID, run.HasMCID = mcid, true
+	pa.PageAt(pageIndex).AddImage(run)
+	return tagged.Figure{PageIndex: pageIndex, MCID: mcid, Alt: alt}, nil
 }

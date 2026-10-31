@@ -2,7 +2,6 @@ package file
 
 import (
 	"io"
-	"runtime"
 
 	"github.com/gsoultan/gpdf/model"
 	"github.com/gsoultan/gpdf/reader"
@@ -21,14 +20,15 @@ func NewDocument(closer io.Closer, doc reader.Document) *Document {
 	d := &Document{
 		closer: closer,
 		doc:    doc,
-		w:      writer.NewPDFWriter(),
+		// Real-world files often reference deleted objects. The strict graph check is meant
+		// for documents built in memory; for files read from disk the writer writes such
+		// dangling references as null, as ISO 32000-1 §7.3.10 defines them.
+		w: writer.NewPDFWriterWithOptions(writer.WriterOptions{ValidateGraph: new(false)}),
 	}
-	runtime.SetFinalizer(d, (*Document).finalize)
+	// No finalizer: one on this wrapper could run while a method is still using the
+	// underlying reader (the wrapper is unreachable once its fields are loaded) and close
+	// the file mid-read. An *os.File closes itself when it becomes unreachable anyway.
 	return d
-}
-
-func (d *Document) finalize() {
-	_ = d.Close()
 }
 
 // Catalog returns the document catalog.
@@ -138,7 +138,6 @@ func (d *Document) ObjectNumbers() []int {
 
 // Close closes the underlying resources. Idempotent.
 func (d *Document) Close() error {
-	runtime.SetFinalizer(d, nil)
 	if d.closer == nil {
 		return nil
 	}

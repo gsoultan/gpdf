@@ -456,6 +456,7 @@ func (t *TableBuilder) measureCell(cell TableCellSpec, width float64) cellLayout
 				img.ColorSpace = info.ColorSpace
 				img.BitsPerComponent = info.BitsPerComponent
 				img.IsJPEG = info.IsJPEG
+				img.Alpha = info.Alpha
 			}
 		}
 		imgW, imgH = computeImageDimensions(img, width, 10000, left, right, top, bottom)
@@ -638,13 +639,15 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 			}
 		}
 
-		ps.ImageRuns = append(ps.ImageRuns, imageRun{
+		ps.AddImage(imageRun{
 			X: imageX, Y: currY - l.imageHeight,
 			WidthPt: l.imageWidth, HeightPt: l.imageHeight,
 			Raw: cell.Image.Raw, WidthPx: cell.Image.WidthPx, HeightPx: cell.Image.HeightPx,
 			BitsPerComponent: cell.Image.BitsPerComponent, ColorSpace: cell.Image.ColorSpace,
 			IsJPEG: cell.Image.IsJPEG,
 			MCID:   mcid, HasMCID: !isArtifact, IsArtifact: isArtifact,
+			HasMask: cell.Image.Alpha != nil, Mask: cell.Image.Alpha,
+			MaskWidth: cell.Image.WidthPx, MaskHeight: cell.Image.HeightPx,
 		})
 		if l.imageWrap == style.ImageWrapTopBottom || l.imageWrap == style.ImageWrapThrough {
 			currY -= l.imageHeight
@@ -735,7 +738,7 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 			tr.TextColorRGB = cell.Style.TextColorRGB
 			tr.UseDefaultColor = false
 		}
-		ps.TextRuns = append(ps.TextRuns, tr)
+		ps.AddText(tr)
 	}
 
 	if sc != nil {

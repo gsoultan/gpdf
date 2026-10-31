@@ -1,36 +1,20 @@
 package sign
 
 import (
+	"errors"
 	"io"
 	"os"
 )
 
-// Sign reads a PDF from r (size bytes) and writes a signed PDF to out.
-//
-// NOTE: At this stage Sign acts as a pass-through (it copies the original PDF
-// to out without modifying it). A later step will add the actual incremental
-// update and signature objects.
+// ErrNotImplemented is returned by Sign and SignFile: digital signatures are not
+// implemented yet. (They used to copy the input unchanged and return nil, so callers
+// believed the file had been signed.)
+var ErrNotImplemented = errors.New("sign: digital signatures are not implemented")
+
+// Sign will read a PDF from r (size bytes) and write a signed PDF to out. It currently
+// writes nothing and returns ErrNotImplemented.
 func Sign(r io.ReaderAt, size int64, out io.Writer, s Signer, opts SignOptions) error {
-	const chunk = 32 * 1024
-	offset := int64(0)
-	buf := make([]byte, chunk)
-	for offset < size {
-		n := chunk
-		if remaining := size - offset; remaining < int64(chunk) {
-			n = int(remaining)
-		}
-		if n <= 0 {
-			break
-		}
-		if _, err := r.ReadAt(buf[:n], offset); err != nil && err != io.EOF {
-			return err
-		}
-		if _, err := out.Write(buf[:n]); err != nil {
-			return err
-		}
-		offset += int64(n)
-	}
-	return nil
+	return ErrNotImplemented
 }
 
 // SignFile opens an existing PDF from path, applies signing via Sign, and writes

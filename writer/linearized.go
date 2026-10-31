@@ -3,6 +3,7 @@ package writer
 import (
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 
 	"github.com/gsoultan/gpdf/model"
@@ -15,7 +16,7 @@ func resolveFirstPageRef(doc Document) (*model.Ref, int, error) {
 	if root == nil {
 		return nil, 0, nil
 	}
-	cat, err := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0})
+	cat, err := doc.Resolve(*root)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -54,7 +55,7 @@ func resolveFirstPageRef(doc Document) (*model.Ref, int, error) {
 func (pw *PDFWriter) writeObjectSet(ws WriteSeeker, objNums []int, doc Document) (map[int]int64, error) {
 	offsets := make(map[int]int64)
 	for _, num := range objNums {
-		ref := model.Ref{ObjectNumber: num, Generation: 0}
+		ref := objectRef(doc, num)
 		obj, err := doc.Resolve(ref)
 		if err != nil {
 			return nil, err
@@ -64,7 +65,7 @@ func (pw *PDFWriter) writeObjectSet(ws WriteSeeker, objNums []int, doc Document)
 			return nil, err
 		}
 		offsets[num] = pos
-		if err := pw.writeIndirectObject(ws, num, 0, obj); err != nil {
+		if err := pw.writeIndirectObject(ws, ref, obj, nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -72,10 +73,11 @@ func (pw *PDFWriter) writeObjectSet(ws WriteSeeker, objNums []int, doc Document)
 }
 
 // WriteLinearized writes a linearized (fast web view) PDF to ws.
-// The writer must be seekable so that the linearization parameter dictionary (object 0)
-// and the first-page trailer can be updated with correct offsets after the rest is written.
+// The writer must be seekable so that the linearization parameter dictionary and the
+// first-page trailer can be updated with correct offsets after the rest is written.
 // Linearization places first-page objects and a first xref/trailer at the start so that
-// a viewer can display page 1 before downloading the full file.
+// a viewer can display page 1 before downloading the full file. No hint stream is
+// written, so viewers treat the file as an ordinary one with a first-page-first layout.
 func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 	allNums := doc.ObjectNumbers()
 	if len(allNums) == 0 {
@@ -86,16 +88,11 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 	if err != nil {
 		return err
 	}
-	var firstPageNums []int
+	var firstPageNums, restNums []int
 	for _, n := range allNums {
 		if firstSet[n] {
 			firstPageNums = append(firstPageNums, n)
-		}
-	}
-	sort.Ints(firstPageNums)
-	var restNums []int
-	for _, n := range allNums {
-		if !firstSet[n] {
+		} else {
 			restNums = append(restNums, n)
 		}
 	}
@@ -108,61 +105,51 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 		firstPageObjNum = firstPageRef.ObjectNumber
 	}
 	maxNum := allNums[len(allNums)-1]
-	totalObjs := maxNum + 1 // include object 0
+	linNum := maxNum + 1 // object 0 is reserved, so the parameter dictionary gets its own number
+	size := linNum + 1
 
-	const header = "%PDF-1.4\n"
-	if _, err := ws.Write([]byte(header)); err != nil {
-		return err
+	ew := &errWriter{w: ws}
+	const header = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
+	io.WriteString(ew, header)
+	linOffset := int64(len(header))
+	// Fixed-width placeholders, patched in place at the end.
+	fmt.Fprintf(ew, "%d 0 obj\n<< /Linearized 1 /L %010d /H [%010d %010d] /O %d /E %010d /N %d /T %010d >>\nendobj\n",
+		linNum, 0, 0, 0, firstPageObjNum, 0, numPages, 0)
+	if ew.err != nil {
+		return ew.err
 	}
-	pos0, err := ws.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return err
-	}
-	// Write object 0: linearization parameter dict (placeholders for /L and /H)
-	linDict := fmt.Sprintf("%d 0 obj\n<< /Linearized 1 /L 0000000000 /H [ 0000000000 0000000000 ] /O %d /N %d /T %d >>\nendobj\n",
-		0, firstPageObjNum, numPages, totalObjs)
-	if _, err := io.WriteString(ws, linDict); err != nil {
-		return err
-	}
-	firstPageBodyEnd, err := ws.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return err
-	}
-	// Write first-page objects (object 0 already written; firstPageNums are 1..N)
 	offsetsFirst, err := pw.writeObjectSet(ws, firstPageNums, doc)
 	if err != nil {
 		return err
 	}
-	offsetsFirst[0] = pos0
-	firstXrefStart, err := ws.Seek(0, io.SeekCurrent)
+	offsetsFirst[linNum] = linOffset
+	firstPageEnd, err := ws.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err
 	}
-	// First xref: 0 through max of first section
-	maxFirst := 0
-	for n := range offsetsFirst {
-		if n > maxFirst {
-			maxFirst = n
-		}
-	}
-	if err := pw.writeXRefTable(ws, doc, firstPageNums, offsetsFirst, maxFirst); err != nil {
+	firstXrefStart := firstPageEnd
+	gens := generations(doc, allNums)
+	firstSection := append(append([]int{}, firstPageNums...), linNum)
+	sort.Ints(firstSection)
+	if err := pw.writeXRefSubsection(ws, firstSection, offsetsFirst, gens); err != nil {
 		return err
 	}
-	// First trailer with 10-digit /Prev placeholder so we can seek back and fix after we know mainXrefStart
-	rootNum := 1
+	root := model.Ref{ObjectNumber: 1}
 	if r := doc.Trailer().Root(); r != nil {
-		rootNum = r.ObjectNumber
+		root = *r
 	}
-	prevPlaceholder := "0000000000"
-	if _, err := fmt.Fprintf(ws, "trailer\n<< /Root %d 0 R /Size %d /Prev %s >>\nstartxref\n%d\n%%%%EOF\n",
-		rootNum, maxNum+1, prevPlaceholder, firstXrefStart); err != nil {
+	fmt.Fprintf(ew, "trailer\n<< /Root %d %d R /Size %d /Prev ", root.ObjectNumber, root.Generation, size)
+	if ew.err != nil {
+		return ew.err
+	}
+	prevValueOffset, err := ws.Seek(0, io.SeekCurrent)
+	if err != nil {
 		return err
 	}
-	firstSectionEnd, _ := ws.Seek(0, io.SeekCurrent)
-	// Offset of the 10-digit /Prev value (we'll overwrite with mainXrefStart at the end)
-	xrefLineLen := 20
-	prevValueOffset := firstXrefStart + int64(5+2+(maxFirst+1)*xrefLineLen) + int64(len("trailer\n<< /Root ")+len(fmt.Sprintf("%d", rootNum))+len(" 0 R /Size ")+len(fmt.Sprintf("%d", maxNum+1))+len(" /Prev "))
-	// Rest: remaining objects, then main xref, main trailer
+	fmt.Fprintf(ew, "%010d >>\nstartxref\n%d\n%%%%EOF\n", 0, firstXrefStart)
+	if ew.err != nil {
+		return ew.err
+	}
 	offsetsRest, err := pw.writeObjectSet(ws, restNums, doc)
 	if err != nil {
 		return err
@@ -171,47 +158,35 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 	if err != nil {
 		return err
 	}
-	allOffsets := make(map[int]int64)
-	for k, v := range offsetsFirst {
-		allOffsets[k] = v
-	}
-	for k, v := range offsetsRest {
-		allOffsets[k] = v
-	}
-	allNumsWith0 := append([]int{0}, allNums...)
-	sort.Ints(allNumsWith0)
-	if err := pw.writeXRefTable(ws, doc, allNumsWith0, allOffsets, maxNum); err != nil {
+	allOffsets := make(map[int]int64, len(allNums)+1)
+	maps.Copy(allOffsets, offsetsFirst)
+	maps.Copy(allOffsets, offsetsRest)
+	gens[linNum] = 0
+	if err := pw.writeXRefTable(ws, allOffsets, gens, linNum); err != nil {
 		return err
 	}
-	trailerMain := copyTrailerWithSize(doc.Trailer().Dict, maxNum+1)
-	if _, err := io.WriteString(ws, "trailer\n"); err != nil {
+	if err := pw.writeTrailer(ws, outputTrailer(doc.Trailer().Dict, size), mainXrefStart, nil); err != nil {
 		return err
 	}
-	if err := pw.writeDict(ws, trailerMain); err != nil {
+	totalLen, err := ws.Seek(0, io.SeekCurrent)
+	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(ws, "\nstartxref\n%d\n%%%%EOF\n", mainXrefStart); err != nil {
+	// Patch the parameter dictionary and the first trailer's /Prev.
+	if _, err := ws.Seek(linOffset, io.SeekStart); err != nil {
 		return err
 	}
-	totalLen, _ := ws.Seek(0, io.SeekCurrent)
-	// Seek back and fix object 0: /L and /H
-	// Lin dict format: /L 0000000000 /H [ 0000000000 0000000000 ]
-	// We need to overwrite with: /L totalLen /H [ firstPageBodyEnd firstSectionEnd ]
-	seekBack := pos0 + int64(len("0 0 obj\n<< /Linearized 1 "))
-	if _, err := ws.Seek(seekBack, io.SeekStart); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(ws, "/L %d /H [ %d %d ]", totalLen, firstPageBodyEnd, firstSectionEnd); err != nil {
-		return err
-	}
-	// Fix first trailer /Prev to point to main xref
+	fmt.Fprintf(ew, "%d 0 obj\n<< /Linearized 1 /L %010d /H [%010d %010d] /O %d /E %010d /N %d /T %010d >>\nendobj\n",
+		linNum, totalLen, firstPageEnd, 0, firstPageObjNum, firstPageEnd, numPages, mainXrefStart)
 	if _, err := ws.Seek(prevValueOffset, io.SeekStart); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(ws, "%010d", mainXrefStart); err != nil {
-		return err
+	fmt.Fprintf(ew, "%010d", mainXrefStart)
+	if ew.err != nil {
+		return ew.err
 	}
-	return nil
+	_, err = ws.Seek(totalLen, io.SeekStart)
+	return err
 }
 
 // firstPageObjectSet returns the set of object numbers required to display the first page
@@ -223,7 +198,7 @@ func (pw *PDFWriter) firstPageObjectSet(doc Document) (map[int]bool, error) {
 	}
 	seen := make(map[int]bool)
 	pw.collectRefs(doc, root.ObjectNumber, seen)
-	cat, err := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0})
+	cat, err := doc.Resolve(*root)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +236,7 @@ func (pw *PDFWriter) collectRefs(doc Document, objNum int, seen map[int]bool) {
 		return
 	}
 	seen[objNum] = true
-	obj, err := doc.Resolve(model.Ref{ObjectNumber: objNum, Generation: 0})
+	obj, err := doc.Resolve(objectRef(doc, objNum))
 	if err != nil || obj == nil {
 		return
 	}
@@ -287,11 +262,10 @@ func (pw *PDFWriter) collectRefs(doc Document, objNum int, seen map[int]bool) {
 	}
 }
 
-func copyTrailerWithSize(d model.Dict, size int) model.Dict {
-	out := make(model.Dict, len(d)+1)
-	for k, v := range d {
-		out[k] = v
+func generations(doc Document, nums []int) map[int]int {
+	gens := make(map[int]int, len(nums))
+	for _, n := range nums {
+		gens[n] = objectRef(doc, n).Generation
 	}
-	out[model.Name("Size")] = model.Integer(int64(size))
-	return out
+	return gens
 }

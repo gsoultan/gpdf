@@ -10,6 +10,9 @@ type CellImageSpec struct {
 	ColorSpace        string
 	WidthPt, HeightPt float64
 	IsJPEG            bool
+	// Alpha is an optional soft mask: one 8-bit opacity sample per pixel. It is filled in
+	// when a PNG is decoded from Raw.
+	Alpha []byte
 
 	Wrap style.ImageWrap
 	Side style.ImageSide

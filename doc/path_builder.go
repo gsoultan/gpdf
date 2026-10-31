@@ -204,7 +204,7 @@ func (p *PathBuilder) commitWithState(ops []content.Op, state *GraphicsState) *D
 	wrapped = append(wrapped, ops...)
 	wrapped = append(wrapped, content.Op{Name: "Q"})
 	ps := &p.builder.pc.pages[p.pageIndex]
-	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{Ops: wrapped, ExtGStates: extGStates})
+	ps.AddGraphic(graphicRun{Ops: wrapped, ExtGStates: extGStates})
 	return p.builder
 }
 

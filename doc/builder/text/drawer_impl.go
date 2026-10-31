@@ -23,7 +23,7 @@ func (d *drawer) DrawText(pa builder.PageAccess, textStr string, x, y float64, f
 	}
 	fontName, fontSize = defaultFont(fontName, fontSize)
 	page := pa.PageAt(pa.PageCount() - 1)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 	})
 }
@@ -34,7 +34,7 @@ func (d *drawer) DrawTextColored(pa builder.PageAccess, textStr string, x, y flo
 	}
 	fontName, fontSize = defaultFont(fontName, fontSize)
 	page := pa.PageAt(pa.PageCount() - 1)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB: [3]float64{color.R, color.G, color.B},
 	})
@@ -82,7 +82,7 @@ func (d *drawer) DrawTextWithUnderline(pa builder.PageAccess, textStr string, x,
 	}
 	fontName, fontSize = defaultFont(fontName, fontSize)
 	page := pa.PageAt(pa.PageCount() - 1)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB: [3]float64{color.R, color.G, color.B},
 		Underline:    true,
@@ -95,7 +95,7 @@ func (d *drawer) DrawTextWithStrikethrough(pa builder.PageAccess, textStr string
 	}
 	fontName, fontSize = defaultFont(fontName, fontSize)
 	page := pa.PageAt(pa.PageCount() - 1)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB:  [3]float64{color.R, color.G, color.B},
 		Strikethrough: true,
@@ -126,7 +126,7 @@ func (d *drawer) DrawTextBoxColored(pa builder.PageAccess, pageIndex int, textSt
 	for i, line := range lines {
 		offsetX, wordSpacing := alignLine(pa, line, x, fontSize, fontName, opts, i, lines)
 		page := pa.PageAt(pageIndex)
-		page.TextRuns = append(page.TextRuns, builder.TextRun{
+		page.AddText(builder.TextRun{
 			Text:          line,
 			X:             offsetX,
 			Y:             curY,
@@ -158,7 +158,7 @@ func (d *drawer) DrawParagraph(pa builder.PageAccess, pageIndex int, textStr str
 	fontName, fontSize = defaultFont(fontName, fontSize)
 	mcid := pa.NextMCID(pageIndex)
 	page := pa.PageAt(pageIndex)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -241,7 +241,7 @@ func (d *drawer) DrawHeading(pa builder.PageAccess, pageIndex int, level int, te
 	}
 	mcid := pa.NextMCID(pageIndex)
 	page := pa.PageAt(pageIndex)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -280,7 +280,7 @@ func (d *drawer) DrawList(pa builder.PageAccess, pageIndex int, items []string, 
 		itemText := label + raw
 		itemY := y - float64(itemCount)*lineHeight
 		mcid := pa.NextMCID(pageIndex)
-		page.TextRuns = append(page.TextRuns, builder.TextRun{
+		page.AddText(builder.TextRun{
 			Text:            itemText,
 			X:               x,
 			Y:               itemY,
@@ -313,7 +313,7 @@ func (d *drawer) drawTaggedBlock(pa builder.PageAccess, pageIndex int, textStr s
 	}
 	mcid := pa.NextMCID(pageIndex)
 	page := pa.PageAt(pageIndex)
-	page.TextRuns = append(page.TextRuns, builder.TextRun{
+	page.AddText(builder.TextRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -383,7 +383,7 @@ func (d *drawer) layoutTextIntoPages(pa builder.PageAccess, pageIndex int, textS
 			r.HasMCID = true
 			r.UseDefaultColor = true
 		}
-		page.TextRuns = append(page.TextRuns, r)
+		page.AddText(r)
 		currentY -= opts.LineHeight
 	}
 }

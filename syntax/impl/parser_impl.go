@@ -20,6 +20,24 @@ type ParserImpl struct {
 	hasPeek bool
 	// pushback holds tokens that were consumed but must be replayed (e.g. "0 0 595" where we thought "0 0 R").
 	pushback []syntax.Token
+	// lengthResolver resolves an indirect stream /Length (e.g. "/Length 5 0 R").
+	lengthResolver func(model.Ref) (int64, bool)
+	depth          int
+}
+
+// maxNestingDepth bounds array/dictionary nesting so hostile input cannot exhaust the stack.
+const maxNestingDepth = 512
+
+// SetLengthResolver installs a callback used to resolve indirect stream /Length values.
+func (p *ParserImpl) SetLengthResolver(fn func(model.Ref) (int64, bool)) {
+	p.lengthResolver = fn
+}
+
+// NewParserWithLengthResolver creates a parser that resolves indirect stream lengths with fn.
+func NewParserWithLengthResolver(r io.ReaderAt, size int64, fn func(model.Ref) (int64, bool)) syntax.Parser {
+	p := NewParser(r, size).(*ParserImpl)
+	p.lengthResolver = fn
+	return p
 }
 
 // NewParser creates a parser that reads from r (size bytes). Initial position is 0.
@@ -113,7 +131,11 @@ func (p *ParserImpl) ParseObject() (indirect *syntax.IndirectObject, inline mode
 					return nil, nil, err
 				}
 				if endTok.Kind != syntax.TokenKeyword || endTok.Value != "endobj" {
-					return nil, nil, fmt.Errorf("expected endobj, got %v", endTok)
+					// Missing endobj is a common producer bug; viewers accept it. Replay the token.
+					if endTok.Kind == syntax.TokenKeyword && endTok.Value == "obj" {
+						return nil, nil, fmt.Errorf("expected endobj, got %v", endTok)
+					}
+					p.pushback = append(p.pushback, endTok)
 				}
 				return &syntax.IndirectObject{
 					ObjectNumber: int(n),
@@ -121,23 +143,12 @@ func (p *ParserImpl) ParseObject() (indirect *syntax.IndirectObject, inline mode
 					Value:        val,
 				}, nil, nil
 			}
-			// Put back tok3, tok2, and treat n as start of inline
-			p.hasPeek = true
-			p.lastTok = tok3
-			// We need to re-parse: gen and then value. So we need to push back gen (Integer) and n (Integer).
-			// Our tokenizer doesn't support pushback of multiple tokens. So we need to parse inline value starting from tok (n).
-			// Inline value could be just Integer n. So return inline Integer(n), and we've consumed n, gen, and tok3.
-			// Actually we already consumed three tokens: n, gen, "obj" or something else. If not "obj", we have to
-			// interpret as two integers then something. Two integers could be part of array or could be N M for ref.
-			// So: if tok3 is "R", then we have Ref(n, gen). If not, we have two numbers and we need to push back.
 			if tok3.Kind == syntax.TokenKeyword && tok3.Value == "R" {
 				return nil, model.Ref{ObjectNumber: int(n), Generation: int(gen)}, nil
 			}
-			// Push back tok3, then return inline: we have Integer(n) and Integer(gen). So we need to return
-			// something and leave parser state so next ParseObject gets Integer(gen) then tok3...
-			p.hasPeek = true
-			p.lastTok = tok3
-			// Return first integer as inline; next call will get gen then tok3
+			// Two integers followed by something else: return the first integer and replay
+			// the second integer and tok3 on the next calls (pushback is LIFO).
+			p.pushback = append(p.pushback, tok3, tok2)
 			return nil, model.Integer(n), nil
 		}
 		// One integer, put back tok2
@@ -242,6 +253,11 @@ func (p *ParserImpl) parseIntOrReal(tok syntax.Token) (model.Object, error) {
 }
 
 func (p *ParserImpl) parseArray() (model.Array, error) {
+	p.depth++
+	defer func() { p.depth-- }()
+	if p.depth > maxNestingDepth {
+		return nil, fmt.Errorf("array nesting deeper than %d", maxNestingDepth)
+	}
 	var arr model.Array
 	for {
 		tok, err := p.peekToken()
@@ -262,6 +278,11 @@ func (p *ParserImpl) parseArray() (model.Array, error) {
 }
 
 func (p *ParserImpl) parseDict() (model.Dict, error) {
+	p.depth++
+	defer func() { p.depth-- }()
+	if p.depth > maxNestingDepth {
+		return nil, fmt.Errorf("dictionary nesting deeper than %d", maxNestingDepth)
+	}
 	dict := make(model.Dict)
 	for {
 		tok, err := p.nextToken()
@@ -286,49 +307,113 @@ func (p *ParserImpl) parseDict() (model.Dict, error) {
 
 func (p *ParserImpl) parseStream(dict model.Dict) (*model.Stream, error) {
 	// PDF: after "stream" comes EOL (CR, LF, or CRLF), then stream bytes, then "endstream".
-	var length int64 = -1
-	if l, ok := dict[model.Name("Length")]; ok {
-		if i, ok := l.(model.Integer); ok {
-			length = int64(i)
+	offset := p.tok.CurrentOffset()
+	skip := int64(0)
+	var eol [2]byte
+	if n, _ := p.r.ReadAt(eol[:], offset); n > 0 {
+		switch {
+		case eol[0] == '\r' && n > 1 && eol[1] == '\n':
+			skip = 2
+		case eol[0] == '\r' || eol[0] == '\n':
+			skip = 1
 		}
 	}
-	if length < 0 {
-		return nil, fmt.Errorf("stream missing Length")
+	streamStart := offset + skip
+	if streamStart > p.size {
+		return nil, fmt.Errorf("stream starts beyond end of file")
 	}
-	offset := p.tok.CurrentOffset()
-	// Skip EOL after "stream" (1 or 2 bytes)
-	skip := 0
-	b := make([]byte, 1)
-	if _, err := p.r.ReadAt(b, offset); err == nil {
-		if b[0] == '\r' {
-			skip = 1
-			b2 := make([]byte, 1)
-			if _, err2 := p.r.ReadAt(b2, offset+1); err2 == nil && b2[0] == '\n' {
-				skip = 2
+
+	// /Length is untrusted: it may be missing, indirect, negative, too short or far past EOF.
+	length := int64(-1)
+	switch l := dict[model.Name("Length")].(type) {
+	case model.Integer:
+		length = int64(l)
+	case model.Real:
+		length = int64(l)
+	case model.Ref:
+		if p.lengthResolver != nil {
+			if n, ok := p.lengthResolver(l); ok {
+				length = n
 			}
 		}
-		if b[0] == '\n' {
-			skip = 1
-		}
 	}
-	streamStart := offset + int64(skip)
-	content := make([]byte, length)
-	_, err := p.r.ReadAt(content, streamStart)
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	// Advance parser past stream body and consume "endstream"
-	p.SetPosition(streamStart + length)
-	for {
-		tok, err := p.nextToken()
+	var end int64 // offset just past the stream data
+	if length >= 0 && length <= p.size-streamStart && p.endstreamAt(streamStart+length) {
+		end = streamStart + length
+	} else {
+		// Recover by scanning for the endstream keyword (what viewers do for damaged files).
+		kw, err := p.findEndstream(streamStart)
 		if err != nil {
 			return nil, err
 		}
-		if tok.Kind == syntax.TokenKeyword && tok.Value == "endstream" {
+		end = kw
+		// The EOL before endstream is not part of the data.
+		if end > streamStart {
+			var b [1]byte
+			if _, err := p.r.ReadAt(b[:], end-1); err == nil && b[0] == '\n' {
+				end--
+				if end > streamStart {
+					if _, err := p.r.ReadAt(b[:], end-1); err == nil && b[0] == '\r' {
+						end--
+					}
+				}
+			} else if err == nil && b[0] == '\r' {
+				end--
+			}
+		}
+		dict[model.Name("Length")] = model.Integer(end - streamStart)
+	}
+	content := make([]byte, end-streamStart)
+	if _, err := p.r.ReadAt(content, streamStart); err != nil && err != io.EOF {
+		return nil, err
+	}
+	// Advance parser past stream body and consume "endstream".
+	p.SetPosition(end)
+	tok, err := p.nextToken()
+	if err != nil {
+		return nil, err
+	}
+	if tok.Kind != syntax.TokenKeyword || tok.Value != "endstream" {
+		return nil, fmt.Errorf("expected endstream at offset %d, got %q", end, tok.Value)
+	}
+	return &model.Stream{Dict: dict, Content: content}, nil
+}
+
+var endstreamKeyword = []byte("endstream")
+
+// endstreamAt reports whether "endstream" follows pos after optional whitespace.
+func (p *ParserImpl) endstreamAt(pos int64) bool {
+	buf := make([]byte, 32)
+	n, _ := p.r.ReadAt(buf, pos)
+	buf = buf[:n]
+	i := 0
+	for i < len(buf) && isWhitespace(buf[i]) {
+		i++
+	}
+	return bytes.HasPrefix(buf[i:], endstreamKeyword)
+}
+
+// findEndstream returns the offset of the first "endstream" at or after start.
+func (p *ParserImpl) findEndstream(start int64) (int64, error) {
+	const chunk = 64 << 10
+	overlap := int64(len(endstreamKeyword) - 1)
+	buf := make([]byte, chunk)
+	for pos := start; pos < p.size; pos += chunk - overlap {
+		n, err := p.r.ReadAt(buf, pos)
+		if n <= 0 {
+			if err != nil && err != io.EOF {
+				return 0, err
+			}
+			break
+		}
+		if i := bytes.Index(buf[:n], endstreamKeyword); i >= 0 {
+			return pos + int64(i), nil
+		}
+		if int64(n) < chunk {
 			break
 		}
 	}
-	return &model.Stream{Dict: dict, Content: content}, nil
+	return 0, fmt.Errorf("stream at offset %d: endstream not found", start)
 }
 
 // ParseXRefTable parses the xref table. Parser must be positioned at the "xref" keyword.

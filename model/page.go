@@ -4,6 +4,8 @@ package model
 // Common keys: /Type (/Page), /Parent, /MediaBox, /Contents, /Resources.
 type Page struct {
 	Dict Dict
+	// Ref is the page object's reference in its document (zero when unknown).
+	Ref Ref
 }
 
 // MediaBox returns the page media box as [llx, lly, urx, ury] if present.

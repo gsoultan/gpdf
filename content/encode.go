@@ -49,7 +49,7 @@ func (e *Encoder) writeObject(obj model.Object) error {
 	case model.Integer:
 		fmt.Fprintf(e.w, "%d", v)
 	case model.Real:
-		fmt.Fprintf(e.w, "%g", v)
+		io.WriteString(e.w, model.FormatReal(float64(v)))
 	case model.String:
 		writeLiteralString(e.w, string(v))
 	case model.HexString:

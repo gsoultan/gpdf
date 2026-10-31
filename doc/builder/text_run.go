@@ -28,4 +28,7 @@ type TextRun struct {
 	Role    model.Name
 
 	IsArtifact bool
+
+	// Seq is the run's position among all runs on its page (see Page.AddText).
+	Seq int
 }

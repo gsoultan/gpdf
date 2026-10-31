@@ -9,4 +9,6 @@ import (
 type GraphicRun struct {
 	Ops        []content.Op
 	ExtGStates map[model.Name]model.Dict
+	// Seq is the run's position among all runs on its page (see Page.AddGraphic).
+	Seq int
 }

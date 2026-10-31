@@ -10,6 +10,7 @@ import (
 	"github.com/gsoultan/gpdf/security"
 	"github.com/gsoultan/gpdf/stream"
 	"github.com/gsoultan/gpdf/stream/defaults"
+	"github.com/gsoultan/gpdf/stream/predictor"
 	"github.com/gsoultan/gpdf/syntax"
 	"github.com/gsoultan/gpdf/syntax/impl"
 	"github.com/gsoultan/gpdf/xref"
@@ -69,12 +70,27 @@ func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string
 		return nil, err
 	}
 	startXRef, err := pr.findStartXRef(r, size)
-	if err != nil {
-		return nil, err
+	var entries map[int]syntax.XRefEntry
+	var trailerDict model.Dict
+	repaired := false
+	if err == nil {
+		entries, trailerDict, repaired, err = pr.parseXRefChain(r, size, startXRef)
 	}
-	entries, trailerDict, err := pr.parseXRefChain(r, size, startXRef)
+	if err == nil && !repaired {
+		if _, ok := trailerDict[model.Name("Root")].(model.Ref); !ok && pr.options.Mode != ParserModeStrict {
+			err = fmt.Errorf("trailer has no /Root")
+		}
+	}
 	if err != nil {
-		return nil, err
+		if pr.options.Mode == ParserModeStrict {
+			return nil, err
+		}
+		var scanErr error
+		entries, trailerDict, scanErr = rebuildXRefByScan(r, size)
+		if scanErr != nil {
+			return nil, fmt.Errorf("%w: original=%v, scan=%v", ErrXRefRepairRequired, err, scanErr)
+		}
+		repaired = true
 	}
 	if len(entries) > pr.options.Limits.MaxObjectCount {
 		return nil, fmt.Errorf("%w: xref entries=%d limit=%d", ErrParseLimitExceeded, len(entries), pr.options.Limits.MaxObjectCount)
@@ -111,6 +127,11 @@ func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string
 			linearization:   linearization,
 		},
 	}
+	var objStms []int
+	if repaired {
+		objStms = doc.repairTrailer()
+		trailer = doc.trailer
+	}
 	if encRef := trailer.Encrypt(); encRef != nil {
 		encObj, err := doc.resolveRaw(*encRef)
 		if err != nil {
@@ -126,54 +147,76 @@ func (pr *PDFReader) readDocument(r io.ReaderAt, size int64, userPassword string
 		}
 		doc.decryptor = dec
 	}
+	for _, num := range objStms {
+		doc.registerObjectStream(num)
+	}
 	return doc, nil
 }
 
 // parseXRefChain follows the /Prev chain to merge all xref sections (table or stream).
-func (pr *PDFReader) parseXRefChain(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, error) {
+// Newer sections win. In a hybrid file the /XRefStm stream of a table section is read
+// right after that section (ISO 32000-1 §7.5.8.4). repaired reports that a section could
+// not be parsed and the whole table was rebuilt by scanning the file instead.
+func (pr *PDFReader) parseXRefChain(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, bool, error) {
 	allEntries := make(map[int]syntax.XRefEntry)
 	var mainTrailer model.Dict
 	visited := make(map[int64]struct{})
 
-	currentOffset := offset
-	for currentOffset >= 0 {
-		if _, seen := visited[currentOffset]; seen {
-			return nil, nil, fmt.Errorf("xref /Prev cycle detected at offset %d", currentOffset)
-		}
-		visited[currentOffset] = struct{}{}
-
-		entries, dict, err := pr.parseXRef(r, size, currentOffset)
-		if err != nil {
-			return nil, nil, err
-		}
-		if mainTrailer == nil {
-			mainTrailer = dict
-		}
+	merge := func(entries map[int]syntax.XRefEntry) {
+		// Sections are visited newest first, so the first definition of a number wins.
 		for num, entry := range entries {
 			if _, exists := allEntries[num]; !exists {
 				allEntries[num] = entry
 			}
 		}
+	}
+	currentOffset := offset
+	for currentOffset >= 0 {
+		if _, seen := visited[currentOffset]; seen {
+			return nil, nil, false, fmt.Errorf("xref /Prev cycle detected at offset %d", currentOffset)
+		}
+		visited[currentOffset] = struct{}{}
+
+		entries, dict, err := pr.tryParseXRef(r, size, currentOffset)
+		if err != nil {
+			if pr.options.Mode == ParserModeStrict {
+				return nil, nil, false, fmt.Errorf("%w: %v", ErrMalformedXRef, err)
+			}
+			if mainTrailer == nil {
+				repairedEntries, repairedTrailer, scanErr := rebuildXRefByScan(r, size)
+				if scanErr != nil {
+					return nil, nil, false, fmt.Errorf("%w: original=%v, scan=%v", ErrXRefRepairRequired, err, scanErr)
+				}
+				return repairedEntries, repairedTrailer, true, nil
+			}
+			// An older section is damaged: keep what the newer sections define.
+			break
+		}
+		if mainTrailer == nil {
+			mainTrailer = dict
+		}
+		if stm, ok := dict[model.Name("XRefStm")].(model.Integer); ok {
+			if _, seen := visited[int64(stm)]; !seen {
+				visited[int64(stm)] = struct{}{}
+				if stmEntries, _, err := pr.parseXRefStream(r, size, int64(stm)); err == nil {
+					// Table entries take precedence; the stream adds the compressed objects
+					// that the table lists as free or leaves out.
+					for num, e := range stmEntries {
+						if cur, ok := entries[num]; !ok || !cur.InUse {
+							entries[num] = e
+						}
+					}
+				}
+			}
+		}
+		merge(entries)
 		if prev, ok := dict[model.Name("Prev")].(model.Integer); ok {
 			currentOffset = int64(prev)
 		} else {
 			break
 		}
 	}
-	return allEntries, mainTrailer, nil
-}
-
-// parseXRef dispatches to table or stream parsing based on file content at offset.
-// If both approaches fail, it falls back to a full-file scan to rebuild the XRef.
-func (pr *PDFReader) parseXRef(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, error) {
-	entries, dict, err := pr.tryParseXRef(r, size, offset)
-	if err != nil {
-		if pr.options.Mode == ParserModeStrict {
-			return nil, nil, fmt.Errorf("%w: %v", ErrMalformedXRef, err)
-		}
-		return pr.repairXRef(r, size, err)
-	}
-	return entries, dict, nil
+	return allEntries, mainTrailer, false, nil
 }
 
 // tryParseXRef attempts normal XRef parsing (table or stream) at the given offset.
@@ -187,15 +230,6 @@ func (pr *PDFReader) tryParseXRef(r io.ReaderAt, size, offset int64) (map[int]sy
 		return pr.parseXRefTable(r, size, offset)
 	}
 	return pr.parseXRefStream(r, size, offset)
-}
-
-// repairXRef rebuilds the XRef by scanning the file when normal parsing fails.
-func (pr *PDFReader) repairXRef(r io.ReaderAt, size int64, originalErr error) (map[int]syntax.XRefEntry, model.Dict, error) {
-	repaired, scanErr := rebuildXRefByScan(r, size)
-	if scanErr != nil {
-		return nil, nil, fmt.Errorf("%w: original=%v, scan=%v", ErrXRefRepairRequired, originalErr, scanErr)
-	}
-	return repaired, model.Dict{}, nil
 }
 
 func (pr *PDFReader) parseXRefTable(r io.ReaderAt, size, offset int64) (map[int]syntax.XRefEntry, model.Dict, error) {
@@ -323,49 +357,104 @@ func applyFilters(data []byte, filterObj model.Object, reg stream.FilterRegistry
 }
 
 func applyFiltersWithLimits(data []byte, filterObj model.Object, reg stream.FilterRegistry, maxDecodedStreamSize int, maxFilterChainLength int) ([]byte, error) {
+	return applyFilterChain(data, filterObj, nil, reg, maxDecodedStreamSize, maxFilterChainLength)
+}
+
+// filterParams returns the /DecodeParms dictionary for the i-th filter of a chain of n filters.
+// /DecodeParms is a dictionary when there is a single filter and an array (with null holes) otherwise.
+func filterParams(parmsObj model.Object, i, n int) model.Dict {
+	switch v := parmsObj.(type) {
+	case model.Dict:
+		if n == 1 || i == 0 {
+			return v
+		}
+	case model.Array:
+		if i < len(v) {
+			if d, ok := v[i].(model.Dict); ok {
+				return d
+			}
+		}
+	}
+	return nil
+}
+
+// predictorParams reads the predictor entries of a /DecodeParms dictionary.
+func predictorParams(d model.Dict) predictor.Params {
+	get := func(k string) int {
+		if v, ok := d[model.Name(k)].(model.Integer); ok {
+			return int(v)
+		}
+		return 0
+	}
+	return predictor.Params{
+		Predictor:        get("Predictor"),
+		Colors:           get("Colors"),
+		BitsPerComponent: get("BitsPerComponent"),
+		Columns:          get("Columns"),
+	}
+}
+
+// applyFilterChain decodes data through every filter in filterObj (a name or an array of names),
+// honouring /DecodeParms: LZW /EarlyChange and the PNG/TIFF predictors of FlateDecode and LZWDecode.
+func applyFilterChain(data []byte, filterObj, parmsObj model.Object, reg stream.FilterRegistry, maxDecodedStreamSize int, maxFilterChainLength int) ([]byte, error) {
 	if filterObj == nil || reg == nil {
 		return data, nil
 	}
 	if maxDecodedStreamSize > 0 && len(data) > maxDecodedStreamSize {
 		return nil, fmt.Errorf("%w: input stream size=%d limit=%d", ErrStreamDecodeLimit, len(data), maxDecodedStreamSize)
 	}
-	decode := func(filterName string, in []byte) ([]byte, error) {
+	decode := func(filterName string, params model.Dict, in []byte) ([]byte, error) {
 		f := reg.Get(filterName)
 		if f == nil {
 			return nil, fmt.Errorf("%w: %s", ErrUnsupportedFilter, filterName)
 		}
 		out := bytes.NewBuffer(make([]byte, 0, len(in)))
-		var decodeErr error
+		var dst io.Writer = out
 		if maxDecodedStreamSize > 0 {
-			decodeErr = f.Decode(newBoundedWriter(out, maxDecodedStreamSize), bytes.NewReader(in), filterName)
+			dst = newBoundedWriter(out, maxDecodedStreamSize)
+		}
+		var decodeErr error
+		if pf, ok := f.(stream.ParamFilter); ok && params != nil {
+			decodeErr = pf.DecodeWithParams(dst, bytes.NewReader(in), filterName, params)
 		} else {
-			decodeErr = f.Decode(out, bytes.NewReader(in), filterName)
+			decodeErr = f.Decode(dst, bytes.NewReader(in), filterName)
 		}
 		if decodeErr != nil {
 			if errors.Is(decodeErr, ErrStreamDecodeLimit) {
 				return nil, fmt.Errorf("%w: filter=%s limit=%d", ErrStreamDecodeLimit, filterName, maxDecodedStreamSize)
 			}
-			return nil, decodeErr
+			return nil, fmt.Errorf("%s: %w", filterName, decodeErr)
 		}
 		if maxDecodedStreamSize > 0 && out.Len() > maxDecodedStreamSize {
 			return nil, fmt.Errorf("%w: filter=%s decoded=%d limit=%d", ErrStreamDecodeLimit, filterName, out.Len(), maxDecodedStreamSize)
 		}
-		return out.Bytes(), nil
+		result := out.Bytes()
+		if params != nil && (filterName == "FlateDecode" || filterName == "LZWDecode") {
+			pp := predictorParams(params)
+			if pp.Predictor > 1 {
+				unpredicted, err := predictor.Decode(result, pp)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", filterName, err)
+				}
+				result = unpredicted
+			}
+		}
+		return result, nil
 	}
 
 	switch v := filterObj.(type) {
 	case model.Name:
-		return decode(string(v), data)
+		return decode(string(v), filterParams(parmsObj, 0, 1), data)
 	case model.Array:
 		if maxFilterChainLength > 0 && len(v) > maxFilterChainLength {
 			return nil, fmt.Errorf("%w: filter chain length=%d limit=%d", ErrParseLimitExceeded, len(v), maxFilterChainLength)
 		}
-		for _, o := range v {
+		for i, o := range v {
 			name, ok := o.(model.Name)
 			if !ok {
 				return nil, fmt.Errorf("filter array contains non-name element: %T", o)
 			}
-			decoded, err := decode(string(name), data)
+			decoded, err := decode(string(name), filterParams(parmsObj, i, len(v)), data)
 			if err != nil {
 				return nil, err
 			}
@@ -378,11 +467,11 @@ func applyFiltersWithLimits(data []byte, filterObj model.Object, reg stream.Filt
 
 // decodeStreamData applies the filter(s) from the stream dict to the raw content.
 func decodeStreamData(s *model.Stream, filters stream.FilterRegistry) ([]byte, error) {
-	return applyFilters(s.Content, s.Dict[model.Name("Filter")], filters)
+	return decodeStreamDataWithLimits(s, filters, 0, 0)
 }
 
 func decodeStreamDataWithLimits(s *model.Stream, filters stream.FilterRegistry, maxDecodedStreamSize int, maxFilterChainLength int) ([]byte, error) {
-	return applyFiltersWithLimits(s.Content, s.Dict[model.Name("Filter")], filters, maxDecodedStreamSize, maxFilterChainLength)
+	return applyFilterChain(s.Content, s.Dict[model.Name("Filter")], s.Dict[model.Name("DecodeParms")], filters, maxDecodedStreamSize, maxFilterChainLength)
 }
 
 type boundedWriter struct {

@@ -27,7 +27,8 @@ func NewTokenizer(r io.ReaderAt, start, size int64) syntax.Tokenizer {
 // SetPosition sets the current read position (for Parser.SetPosition).
 func (t *tokenizer) SetPosition(offset int64) {
 	t.pos = offset
-	t.buf = bufio.NewReader(io.NewSectionReader(t.r, offset, t.end-offset))
+	n := max(t.end-offset, 0)
+	t.buf = bufio.NewReader(io.NewSectionReader(t.r, offset, n))
 }
 
 // CurrentOffset returns the byte offset of the next character to be read.
@@ -35,38 +36,58 @@ func (t *tokenizer) CurrentOffset() int64 {
 	return t.pos
 }
 
+func (t *tokenizer) readByte() (byte, error) {
+	b, err := t.buf.ReadByte()
+	if err == nil {
+		t.pos++
+	}
+	return b, err
+}
+
+func (t *tokenizer) unreadByte() {
+	if t.buf.UnreadByte() == nil {
+		t.pos--
+	}
+}
+
+func (t *tokenizer) peekByte() (byte, bool) {
+	p, err := t.buf.Peek(1)
+	if err != nil || len(p) == 0 {
+		return 0, false
+	}
+	return p[0], true
+}
+
+func (t *tokenizer) discard(n int) {
+	d, _ := t.buf.Discard(n)
+	t.pos += int64(d)
+}
+
 func (t *tokenizer) Next() (syntax.Token, error) {
-	// Skip whitespace and comments
+	// Skip whitespace and comments.
 	for {
-		b, err := t.buf.ReadByte()
+		b, err := t.readByte()
 		if err == io.EOF {
 			return syntax.Token{Kind: syntax.TokenEOF}, nil
 		}
 		if err != nil {
 			return syntax.Token{}, err
 		}
-		t.pos++
 		if b == '%' {
-			_, _ = t.buf.ReadBytes('\n')
+			t.skipComment()
 			continue
 		}
 		if isWhitespace(b) {
 			continue
 		}
-		t.buf.UnreadByte()
-		t.pos--
+		t.unreadByte()
 		break
 	}
 
-	// Peek first byte
-	peek, err := t.buf.Peek(1)
-	if err == io.EOF {
+	first, ok := t.peekByte()
+	if !ok {
 		return syntax.Token{Kind: syntax.TokenEOF}, nil
 	}
-	if err != nil {
-		return syntax.Token{}, err
-	}
-	first := peek[0]
 
 	switch first {
 	case '/':
@@ -76,26 +97,25 @@ func (t *tokenizer) Next() (syntax.Token, error) {
 	case '<':
 		peek2, _ := t.buf.Peek(2)
 		if len(peek2) == 2 && peek2[1] == '<' {
-			t.buf.Discard(2)
-			t.pos += 2
+			t.discard(2)
 			return syntax.Token{Kind: syntax.TokenLDict, Value: "<<"}, nil
 		}
 		return t.readHexString()
 	case '>':
 		peek2, _ := t.buf.Peek(2)
 		if len(peek2) == 2 && peek2[1] == '>' {
-			t.buf.Discard(2)
-			t.pos += 2
+			t.discard(2)
 			return syntax.Token{Kind: syntax.TokenRDict, Value: ">>"}, nil
 		}
-		return syntax.Token{}, nil
+		// A lone '>' is not valid PDF syntax. Consume it and report it, rather than
+		// returning a zero Token (which is TokenEOF and silently truncates parsing).
+		t.discard(1)
+		return syntax.Token{Kind: syntax.TokenUnknown, Value: ">"}, nil
 	case '[':
-		t.buf.Discard(1)
-		t.pos++
+		t.discard(1)
 		return syntax.Token{Kind: syntax.TokenLBracket}, nil
 	case ']':
-		t.buf.Discard(1)
-		t.pos++
+		t.discard(1)
 		return syntax.Token{Kind: syntax.TokenRBracket}, nil
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '.':
 		return t.readNumber()
@@ -104,36 +124,37 @@ func (t *tokenizer) Next() (syntax.Token, error) {
 	}
 }
 
+// skipComment consumes the rest of a comment line (the '%' is already consumed).
+func (t *tokenizer) skipComment() {
+	for {
+		b, err := t.readByte()
+		if err != nil || b == '\n' || b == '\r' {
+			return
+		}
+	}
+}
+
 func isWhitespace(b byte) bool {
-	return b == 0 || b == '\t' || b == '\n' || b == '\r' || b == ' '
+	return b == 0 || b == '\t' || b == '\n' || b == '\f' || b == '\r' || b == ' '
 }
 
 func (t *tokenizer) readName() (syntax.Token, error) {
-	t.buf.Discard(1) // /
-	t.pos++
+	t.discard(1) // /
 	var buf bytes.Buffer
 	for {
-		b, err := t.buf.ReadByte()
+		b, err := t.readByte()
 		if err != nil {
-			return syntax.Token{Kind: syntax.TokenName, Value: buf.String()}, nil
-		}
-		t.pos++
-		if isDelimiter(b) || isWhitespace(b) {
-			t.buf.UnreadByte()
-			t.pos--
 			break
 		}
-		if b == '#' && buf.Len() > 0 {
+		if isDelimiter(b) || isWhitespace(b) {
+			t.unreadByte()
+			break
+		}
+		if b == '#' {
 			hex, err := t.buf.Peek(2)
-			if err != nil || len(hex) < 2 {
-				buf.WriteByte(b)
-				continue
-			}
-			if isHex(hex[0]) && isHex(hex[1]) {
-				t.buf.Discard(2)
-				t.pos += 2
-				v := hexByte(hex[0], hex[1])
-				buf.WriteByte(v)
+			if err == nil && len(hex) == 2 && isHex(hex[0]) && isHex(hex[1]) {
+				t.discard(2)
+				buf.WriteByte(hexByte(hex[0], hex[1]))
 				continue
 			}
 		}
@@ -143,7 +164,7 @@ func (t *tokenizer) readName() (syntax.Token, error) {
 }
 
 func isDelimiter(b byte) bool {
-	return b == '/' || b == '(' || b == ')' || b == '<' || b == '>' || b == '[' || b == ']' || b == '{' || b == '}'
+	return b == '/' || b == '(' || b == ')' || b == '<' || b == '>' || b == '[' || b == ']' || b == '{' || b == '}' || b == '%'
 }
 
 func isHex(b byte) bool {
@@ -168,20 +189,20 @@ func hexVal(b byte) byte {
 }
 
 func (t *tokenizer) readLiteralString() (syntax.Token, error) {
-	t.buf.Discard(1) // (
-	t.pos++
+	t.discard(1) // (
 	var buf bytes.Buffer
 	depth := 1
 	for depth > 0 {
-		b, err := t.buf.ReadByte()
+		b, err := t.readByte()
 		if err != nil {
 			break
 		}
-		t.pos++
 		switch b {
 		case '\\':
-			n, _ := t.buf.ReadByte()
-			t.pos++
+			n, err := t.readByte()
+			if err != nil {
+				break
+			}
 			switch n {
 			case 'n':
 				buf.WriteByte('\n')
@@ -195,28 +216,36 @@ func (t *tokenizer) readLiteralString() (syntax.Token, error) {
 				buf.WriteByte('\f')
 			case '(', ')', '\\':
 				buf.WriteByte(n)
-			case '\n', '\r':
+			case '\r':
+				// Line continuation; a CRLF pair counts as one end-of-line marker.
+				if p, ok := t.peekByte(); ok && p == '\n' {
+					t.discard(1)
+				}
+			case '\n':
 				// line continuation
 			default:
 				if n >= '0' && n <= '7' {
-					oct := []byte{n}
-					for i := 0; i < 2; i++ {
-						p, _ := t.buf.Peek(1)
-						if len(p) > 0 && p[0] >= '0' && p[0] <= '7' {
-							c, _ := t.buf.ReadByte()
-							t.pos++
-							oct = append(oct, c)
+					v := n - '0'
+					for range 2 {
+						p, ok := t.peekByte()
+						if !ok || p < '0' || p > '7' {
+							break
 						}
+						t.discard(1)
+						v = v*8 + (p - '0')
 					}
-					if len(oct) >= 2 {
-						var v byte
-						for _, c := range oct {
-							v = v*8 + (c - '0')
-						}
-						buf.WriteByte(v)
-					}
+					buf.WriteByte(v)
+				} else {
+					// Unknown escape: the backslash is ignored (ISO 32000-1 §7.3.4.2).
+					buf.WriteByte(n)
 				}
 			}
+		case '\r':
+			// An unescaped end-of-line in a literal string is read as a single LF.
+			if p, ok := t.peekByte(); ok && p == '\n' {
+				t.discard(1)
+			}
+			buf.WriteByte('\n')
 		case '(':
 			depth++
 			buf.WriteByte(b)
@@ -233,68 +262,90 @@ func (t *tokenizer) readLiteralString() (syntax.Token, error) {
 }
 
 func (t *tokenizer) readHexString() (syntax.Token, error) {
-	t.buf.Discard(1) // <
-	t.pos++
+	t.discard(1) // <
 	var buf bytes.Buffer
+	var hi byte
+	half := false
 	for {
-		b, err := t.buf.ReadByte()
+		b, err := t.readByte()
 		if err != nil || b == '>' {
-			if b == '>' {
-				t.pos++
-			}
 			break
 		}
-		t.pos++
-		if isWhitespace(b) {
+		if !isHex(b) {
+			continue // whitespace and stray characters are ignored
+		}
+		if !half {
+			hi = hexVal(b)
+			half = true
 			continue
 		}
-		t.buf.UnreadByte()
-		t.pos--
-		peek, _ := t.buf.Peek(2)
-		if len(peek) < 2 {
-			break
-		}
-		if isHex(peek[0]) && isHex(peek[1]) {
-			t.buf.Discard(2)
-			t.pos += 2
-			buf.WriteByte(hexByte(peek[0], peek[1]))
-		} else {
-			t.buf.ReadByte()
-			t.pos++
-		}
+		buf.WriteByte(hi<<4 | hexVal(b))
+		half = false
+	}
+	if half {
+		// An odd number of digits behaves as if a final 0 followed.
+		buf.WriteByte(hi << 4)
 	}
 	return syntax.Token{Kind: syntax.TokenHex, Value: buf.String()}, nil
 }
 
 func (t *tokenizer) readNumber() (syntax.Token, error) {
 	var buf bytes.Buffer
-	hasDot := false
 	for {
-		b, err := t.buf.ReadByte()
+		b, err := t.readByte()
 		if err != nil {
 			break
 		}
-		t.pos++
-		if (b >= '0' && b <= '9') || b == '+' || b == '-' {
+		if (b >= '0' && b <= '9') || b == '+' || b == '-' || b == '.' {
 			buf.WriteByte(b)
 			continue
 		}
-		if b == '.' {
-			buf.WriteByte(b)
-			hasDot = true
-			continue
-		}
-		t.buf.UnreadByte()
-		t.pos--
+		t.unreadByte()
 		break
 	}
-	s := buf.String()
-	if hasDot {
-		f, _ := strconv.ParseFloat(s, 64)
-		return syntax.Token{Kind: syntax.TokenReal, Value: s, Float: f}, nil
+	return numberToken(buf.String()), nil
+}
+
+// numberToken converts a numeric lexeme. Malformed numbers (e.g. "--5", "1.2.3", "-")
+// are read leniently the way common viewers do: a leading sign and the first run of
+// digits and one decimal point are used and the rest is ignored.
+func numberToken(s string) syntax.Token {
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return syntax.Token{Kind: syntax.TokenInteger, Value: s, Int: i}
 	}
-	i, _ := strconv.ParseInt(s, 10, 64)
-	return syntax.Token{Kind: syntax.TokenInteger, Value: s, Int: i}, nil
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return syntax.Token{Kind: syntax.TokenReal, Value: s, Float: f}
+	}
+	neg := false
+	i := 0
+	for i < len(s) && (s[i] == '+' || s[i] == '-') {
+		if s[i] == '-' {
+			neg = !neg
+		}
+		i++
+	}
+	j := i
+	dot := false
+	for j < len(s) && ((s[j] >= '0' && s[j] <= '9') || (s[j] == '.' && !dot)) {
+		if s[j] == '.' {
+			dot = true
+		}
+		j++
+	}
+	core := s[i:j]
+	if core == "" || core == "." {
+		core = "0"
+	}
+	if neg {
+		core = "-" + core
+	}
+	if !dot {
+		if v, err := strconv.ParseInt(core, 10, 64); err == nil {
+			return syntax.Token{Kind: syntax.TokenInteger, Value: s, Int: v}
+		}
+	}
+	f, _ := strconv.ParseFloat(core, 64)
+	return syntax.Token{Kind: syntax.TokenReal, Value: s, Float: f}
 }
 
 var keywords = map[string]syntax.TokenKind{
@@ -314,14 +365,17 @@ var keywords = map[string]syntax.TokenKind{
 func (t *tokenizer) readKeywordOrRef() (syntax.Token, error) {
 	var buf bytes.Buffer
 	for {
-		b, err := t.buf.ReadByte()
+		b, err := t.readByte()
 		if err != nil {
 			break
 		}
-		t.pos++
 		if isWhitespace(b) || isDelimiter(b) {
-			t.buf.UnreadByte()
-			t.pos--
+			if buf.Len() == 0 {
+				// A delimiter that cannot start a token (')', '{', '}'): consume it so the
+				// caller always makes progress instead of looping on the same byte.
+				return syntax.Token{Kind: syntax.TokenUnknown, Value: string(b)}, nil
+			}
+			t.unreadByte()
 			break
 		}
 		buf.WriteByte(b)
