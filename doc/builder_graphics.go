@@ -32,7 +32,7 @@ func (b *DocumentBuilder) addGraphicRunWithState(pageIndex int, state GraphicsSt
 
 	ops = append(ops, body...)
 	ops = append(ops, content.Op{Name: "Q"})
-	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{Ops: ops, ExtGStates: extGStates})
+	ps.AddGraphic(graphicRun{Ops: ops, ExtGStates: extGStates})
 	return b
 }
 

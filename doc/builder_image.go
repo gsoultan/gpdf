@@ -3,7 +3,6 @@ package doc
 import (
 	"fmt"
 
-	imgpkg "github.com/gsoultan/gpdf/doc/image"
 	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
 )
 
@@ -17,7 +16,7 @@ func (b *DocumentBuilder) addImageRun(pageIndex int, run imageRun) *DocumentBuil
 	if run.BitsPerComponent <= 0 {
 		run.BitsPerComponent = 8
 	}
-	b.pc.pages[pageIndex].ImageRuns = append(b.pc.pages[pageIndex].ImageRuns, run)
+	b.pc.pages[pageIndex].AddImage(run)
 	return b
 }
 
@@ -51,12 +50,12 @@ func (b *DocumentBuilder) DrawPNG(x, y, widthPt, heightPt float64, pngData []byt
 	if b.err != nil || len(pngData) == 0 {
 		return b
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	run := imageRun{X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt}
+	if err := run.SetPNG(pngData); err != nil {
 		b.setErr(fmt.Errorf("DrawPNG: %w", err))
 		return b
 	}
-	return b.DrawImage(x, y, widthPt, heightPt, raw, w, h, 8, colorSpace)
+	return b.addImageRun(b.lastPageIndex(), run)
 }
 
 // DrawCircularImage queues a raw image clipped to a circle on the last added page.
@@ -84,12 +83,13 @@ func (b *DocumentBuilder) DrawCircularPNG(x, y, widthPt, heightPt float64, pngDa
 	if b.err != nil || len(pngData) == 0 {
 		return b
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	run := imageRun{X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
+		ClipCircle: true, ClipCX: cx, ClipCY: cy, ClipR: radius}
+	if err := run.SetPNG(pngData); err != nil {
 		b.setErr(fmt.Errorf("DrawCircularPNG: %w", err))
 		return b
 	}
-	return b.DrawCircularImage(x, y, widthPt, heightPt, raw, w, h, 8, colorSpace, cx, cy, radius)
+	return b.addImageRun(b.lastPageIndex(), run)
 }
 
 // DrawImageWithOpacity queues a raw image drawn at (x,y) with the given opacity in [0,1].
@@ -117,12 +117,12 @@ func (b *DocumentBuilder) DrawPNGWithOpacity(x, y, widthPt, heightPt float64, pn
 	if b.err != nil || len(pngData) == 0 {
 		return b
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	run := imageRun{X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt, Opacity: opacity}
+	if err := run.SetPNG(pngData); err != nil {
 		b.setErr(fmt.Errorf("DrawPNGWithOpacity: %w", err))
 		return b
 	}
-	return b.DrawImageWithOpacity(x, y, widthPt, heightPt, raw, w, h, 8, colorSpace, opacity)
+	return b.addImageRun(b.lastPageIndex(), run)
 }
 
 // DrawJPEGRotated queues a JPEG image rotated clockwise by rotateDeg degrees.
@@ -140,17 +140,12 @@ func (b *DocumentBuilder) DrawPNGRotated(x, y, widthPt, heightPt float64, pngDat
 	if b.err != nil || len(pngData) == 0 {
 		return b
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	run := imageRun{X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt, RotateDeg: rotateDeg}
+	if err := run.SetPNG(pngData); err != nil {
 		b.setErr(fmt.Errorf("DrawPNGRotated: %w", err))
 		return b
 	}
-	return b.addImageRun(b.lastPageIndex(), imageRun{
-		X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt,
-		Raw: raw, WidthPx: w, HeightPx: h,
-		BitsPerComponent: 8, ColorSpace: colorSpace,
-		RotateDeg: rotateDeg,
-	})
+	return b.addImageRun(b.lastPageIndex(), run)
 }
 
 func (b *DocumentBuilder) addTaggedFigure(pageIndex int, run imageRun, alt string) *DocumentBuilder {
@@ -192,10 +187,10 @@ func (b *DocumentBuilder) DrawTaggedPNG(pageIndex int, x, y, widthPt, heightPt f
 	if b.err != nil || len(pngData) == 0 {
 		return b
 	}
-	raw, w, h, colorSpace, err := imgpkg.DecodePNGToRaw(pngData)
-	if err != nil {
+	run := imageRun{X: x, Y: y, WidthPt: widthPt, HeightPt: heightPt}
+	if err := run.SetPNG(pngData); err != nil {
 		b.setErr(fmt.Errorf("DrawTaggedPNG: %w", err))
 		return b
 	}
-	return b.DrawTaggedFigure(pageIndex, x, y, widthPt, heightPt, raw, w, h, 8, colorSpace, alt)
+	return b.addTaggedFigure(pageIndex, run, alt)
 }

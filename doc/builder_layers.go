@@ -29,7 +29,7 @@ func (b *DocumentBuilder) DrawInLayer(lh *layer.Handle, pageIndex int, draw func
 	mcid := ps.NextMCID
 	ps.NextMCID++
 
-	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{
+	ps.AddGraphic(graphicRun{
 		Ops: []content.Op{
 			{
 				Name: "BDC",
@@ -46,7 +46,7 @@ func (b *DocumentBuilder) DrawInLayer(lh *layer.Handle, pageIndex int, draw func
 
 	draw(b)
 
-	ps.GraphicRuns = append(ps.GraphicRuns, graphicRun{
+	ps.AddGraphic(graphicRun{
 		Ops: []content.Op{
 			{Name: "EMC"},
 		},

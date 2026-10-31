@@ -151,7 +151,7 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 			if opts.IsVertical {
 				for _, r := range seg.text {
 					charStr := string(r)
-					b.pc.pages[currentPage].TextRuns = append(b.pc.pages[currentPage].TextRuns, textRun{
+					b.pc.pages[currentPage].AddText(textRun{
 						Text:     charStr,
 						X:        currentX,
 						Y:        currentY,
@@ -192,7 +192,7 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 					r.UseDefaultColor = true
 				}
 			}
-			targetPage.TextRuns = append(targetPage.TextRuns, r)
+			targetPage.AddText(r)
 			currentX += segWidth + float64(numSpaces)*wordSpacing
 		}
 		currentY -= opts.LineHeight
@@ -341,7 +341,7 @@ func (b *DocumentBuilder) DrawTextWithSpacing(textStr string, x, y float64, font
 	currentX := x
 	for _, seg := range segments {
 		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, wordSpacing)
-		b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+		b.pc.pages[idx].AddText(textRun{
 			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
 			TextColorRGB:  [3]float64{color.R, color.G, color.B},
 			LetterSpacing: letterSpacing,
@@ -373,7 +373,7 @@ func (b *DocumentBuilder) DrawTextWithSpacingScale(textStr string, x, y float64,
 	currentX := x
 	for _, seg := range segments {
 		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, wordSpacing) * horizontalScale / 100
-		b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+		b.pc.pages[idx].AddText(textRun{
 			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
 			TextColorRGB:    [3]float64{color.R, color.G, color.B},
 			LetterSpacing:   letterSpacing,
@@ -402,7 +402,7 @@ func (b *DocumentBuilder) DrawTextRotated(textStr string, x, y float64, fontName
 	currentX := x
 	for _, seg := range segments {
 		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, 0, 0)
-		b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+		b.pc.pages[idx].AddText(textRun{
 			Text:         seg.text,
 			X:            currentX,
 			Y:            y,
@@ -431,7 +431,7 @@ func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y 
 	currentX := x
 	for _, seg := range segments {
 		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, 0)
-		b.pc.pages[pageIndex].TextRuns = append(b.pc.pages[pageIndex].TextRuns, textRun{
+		b.pc.pages[pageIndex].AddText(textRun{
 			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
 			TextColorRGB:  [3]float64{color.R, color.G, color.B},
 			LetterSpacing: letterSpacing,
@@ -476,7 +476,7 @@ func (b *DocumentBuilder) DrawTextWithUnderline(textStr string, x, y float64, fo
 		return b
 	}
 	idx := b.lastPageIndex()
-	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+	b.pc.pages[idx].AddText(textRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB: [3]float64{color.R, color.G, color.B},
 		Underline:    true,
@@ -490,7 +490,7 @@ func (b *DocumentBuilder) DrawTextWithStrikethrough(textStr string, x, y float64
 		return b
 	}
 	idx := b.lastPageIndex()
-	b.pc.pages[idx].TextRuns = append(b.pc.pages[idx].TextRuns, textRun{
+	b.pc.pages[idx].AddText(textRun{
 		Text: textStr, X: x, Y: y, FontName: fontName, FontSize: fontSize,
 		TextColorRGB:  [3]float64{color.R, color.G, color.B},
 		Strikethrough: true,
@@ -540,7 +540,7 @@ func (b *DocumentBuilder) DrawTextBoxColored(pageIndex int, textStr string, x, y
 				}
 			}
 		}
-		b.pc.pages[pageIndex].TextRuns = append(b.pc.pages[pageIndex].TextRuns, textRun{
+		b.pc.pages[pageIndex].AddText(textRun{
 			Text:          line,
 			X:             offsetX,
 			Y:             curY,
@@ -570,7 +570,7 @@ func (b *DocumentBuilder) DrawParagraph(pageIndex int, textStr string, x, y floa
 	ps := &b.pc.pages[pageIndex]
 	mcid := ps.NextMCID
 	ps.NextMCID++
-	ps.TextRuns = append(ps.TextRuns, textRun{
+	ps.AddText(textRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -619,7 +619,7 @@ func (b *DocumentBuilder) drawTaggedBlock(pageIndex int, textStr string, x, y fl
 	ps := &b.pc.pages[pageIndex]
 	mcid := ps.NextMCID
 	ps.NextMCID++
-	ps.TextRuns = append(ps.TextRuns, textRun{
+	ps.AddText(textRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -710,7 +710,7 @@ func (b *DocumentBuilder) DrawHeadingColored(pageIndex int, level int, textStr s
 	ps := &b.pc.pages[pageIndex]
 	mcid := ps.NextMCID
 	ps.NextMCID++
-	ps.TextRuns = append(ps.TextRuns, textRun{
+	ps.AddText(textRun{
 		Text:            textStr,
 		X:               x,
 		Y:               y,
@@ -778,7 +778,7 @@ func (b *DocumentBuilder) DrawListEnhanced(pageIndex int, items []string, x, y, 
 		// Draw Marker
 		mcidMarker := ps.NextMCID
 		ps.NextMCID++
-		ps.TextRuns = append(ps.TextRuns, textRun{
+		ps.AddText(textRun{
 			Text:            markerText,
 			X:               x + float64(ls.Level)*ls.Indent,
 			Y:               itemY,
@@ -793,7 +793,7 @@ func (b *DocumentBuilder) DrawListEnhanced(pageIndex int, items []string, x, y, 
 		// Draw Item Text
 		mcidText := ps.NextMCID
 		ps.NextMCID++
-		ps.TextRuns = append(ps.TextRuns, textRun{
+		ps.AddText(textRun{
 			Text:            raw,
 			X:               x + float64(ls.Level)*ls.Indent + ls.MarkerOffset,
 			Y:               itemY,

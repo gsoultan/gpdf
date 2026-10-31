@@ -30,4 +30,7 @@ type ImageRun struct {
 	HasMCID bool
 
 	IsArtifact bool
+
+	// Seq is the run's position among all runs on its page (see Page.AddImage).
+	Seq int
 }

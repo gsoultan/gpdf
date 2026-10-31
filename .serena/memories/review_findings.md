@@ -46,8 +46,18 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   correct first-section xref and /Prev. [TestSaveLinearizedIsWellFormed]
 - FIXED (found 2026-10-31) — reader/file.Document finalizer could close the file while a method was still reading
   (e.g. SaveLinearized on a large file: "file already closed"). Finalizer removed.
+- FIXED (proteus-converter PR #3) — paint order was fixed to graphics, text, images. Runs now carry a per-page
+  `Seq` (stamped by `builder.Page.AddText/AddImage/AddGraphic`; always use these, never append to the slices) and
+  `DocumentBuilder.SetPaintOrder(doc.PaintInCallOrder)` interleaves them; `PaintLayered` stays the default.
+  Images are still named /Im<n> by their index in ImageRuns. [TestPaintInCallOrderInterleavesRuns]
+- FIXED (proteus-converter PR #3) — PNG alpha was dropped (premultiplied, so transparent pixels went black).
+  `image.DecodePNG` returns non-premultiplied samples + Alpha; `builder.ImageRun.SetPNG` writes Alpha as /SMask; every
+  PNG path (DrawPNG*, imgdraw, Page image objects, table cell images, DrawImageWith with PNG/JPEG file bytes, so
+  FlowBuilder.Image works) uses it. `DecodePNGToRaw` is deprecated. [TestPNGAlphaBecomesSoftMaskAndImagesAreCompressed, poppler render]
+- FIXED (proteus-converter PR #3) — raw image XObjects and soft masks are written with /FlateDecode.
 
 ## Still open
+- JPEG CMYK (Adobe inverted) gets DeviceCMYK with no /Decode array, so such files can render inverted.
 - SaveLinearized writes no hint stream (poppler warns "Hints table length ... invalid"; files still open).
 - AES-256 passwords are not SASLprep-normalised (ASCII and NFC input fine).
 - Reader decodes every stream on Resolve; a stream with an unsupported filter makes Resolve (and Save) fail.

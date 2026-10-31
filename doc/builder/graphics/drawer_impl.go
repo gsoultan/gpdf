@@ -30,7 +30,7 @@ func (d drawer) DrawLine(pa builder.PageAccess, pageIndex int, x1, y1, x2, y2 fl
 		content.Op{Name: "S"},
 		content.Op{Name: "Q"},
 	)
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) DrawLineWithState(pa builder.PageAccess, pageIndex int, x1, y1, x2, y2 float64, ls style.LineStyle, gs style.GraphicsState) {
@@ -57,7 +57,7 @@ func (d drawer) DrawRect(pa builder.PageAccess, pageIndex int, x, y, width, heig
 		content.Op{Name: "S"},
 		content.Op{Name: "Q"},
 	)
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillRect(pa builder.PageAccess, pageIndex int, x, y, width, height float64, c style.Color) {
@@ -71,7 +71,7 @@ func (d drawer) FillRect(pa builder.PageAccess, pageIndex int, x, y, width, heig
 		content.Op{Name: "f"},
 		content.Op{Name: "Q"},
 	)
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillStrokeRect(pa builder.PageAccess, pageIndex int, x, y, width, height float64, fill style.Color, stroke style.LineStyle) {
@@ -86,7 +86,7 @@ func (d drawer) FillStrokeRect(pa builder.PageAccess, pageIndex int, x, y, width
 		content.Op{Name: "B"},
 		content.Op{Name: "Q"},
 	)
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) DrawRectWithState(pa builder.PageAccess, pageIndex int, x, y, width, height float64, ls style.LineStyle, gs style.GraphicsState) {
@@ -130,7 +130,7 @@ func (d drawer) DrawCircle(pa builder.PageAccess, pageIndex int, cx, cy, radius 
 	ops = append(ops, strokeStateOps(ls)...)
 	ops = append(ops, circlePathOps(cx, cy, radius)...)
 	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillCircle(pa builder.PageAccess, pageIndex int, cx, cy, radius float64, c style.Color) {
@@ -141,7 +141,7 @@ func (d drawer) FillCircle(pa builder.PageAccess, pageIndex int, cx, cy, radius 
 	ops = append(ops, fillColorOps(c)...)
 	ops = append(ops, circlePathOps(cx, cy, radius)...)
 	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillStrokeCircle(pa builder.PageAccess, pageIndex int, cx, cy, radius float64, fill style.Color, stroke style.LineStyle) {
@@ -153,7 +153,7 @@ func (d drawer) FillStrokeCircle(pa builder.PageAccess, pageIndex int, cx, cy, r
 	ops = append(ops, fillColorOps(fill)...)
 	ops = append(ops, circlePathOps(cx, cy, radius)...)
 	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) DrawCircleWithState(pa builder.PageAccess, pageIndex int, cx, cy, radius float64, ls style.LineStyle, gs style.GraphicsState) {
@@ -191,7 +191,7 @@ func (d drawer) DrawRoundedRect(pa builder.PageAccess, pageIndex int, x, y, widt
 	ops = append(ops, strokeStateOps(ls)...)
 	ops = append(ops, roundedRectPathOps(x, y, width, height, radius)...)
 	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillRoundedRect(pa builder.PageAccess, pageIndex int, x, y, width, height, radius float64, c style.Color) {
@@ -202,7 +202,7 @@ func (d drawer) FillRoundedRect(pa builder.PageAccess, pageIndex int, x, y, widt
 	ops = append(ops, fillColorOps(c)...)
 	ops = append(ops, roundedRectPathOps(x, y, width, height, radius)...)
 	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillStrokeRoundedRect(pa builder.PageAccess, pageIndex int, x, y, width, height, radius float64, fill style.Color, stroke style.LineStyle) {
@@ -214,7 +214,7 @@ func (d drawer) FillStrokeRoundedRect(pa builder.PageAccess, pageIndex int, x, y
 	ops = append(ops, fillColorOps(fill)...)
 	ops = append(ops, roundedRectPathOps(x, y, width, height, radius)...)
 	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 // ── Ellipses ─────────────────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ func (d drawer) DrawEllipse(pa builder.PageAccess, pageIndex int, cx, cy, rx, ry
 	ops = append(ops, strokeStateOps(ls)...)
 	ops = append(ops, ellipsePathOps(cx, cy, rx, ry)...)
 	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillEllipse(pa builder.PageAccess, pageIndex int, cx, cy, rx, ry float64, c style.Color) {
@@ -238,7 +238,7 @@ func (d drawer) FillEllipse(pa builder.PageAccess, pageIndex int, cx, cy, rx, ry
 	ops = append(ops, fillColorOps(c)...)
 	ops = append(ops, ellipsePathOps(cx, cy, rx, ry)...)
 	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillStrokeEllipse(pa builder.PageAccess, pageIndex int, cx, cy, rx, ry float64, fill style.Color, stroke style.LineStyle) {
@@ -250,7 +250,7 @@ func (d drawer) FillStrokeEllipse(pa builder.PageAccess, pageIndex int, cx, cy, 
 	ops = append(ops, fillColorOps(fill)...)
 	ops = append(ops, ellipsePathOps(cx, cy, rx, ry)...)
 	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 // ── Polygons ─────────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ func (d drawer) DrawPolygon(pa builder.PageAccess, pageIndex int, points []float
 	ops = append(ops, strokeStateOps(ls)...)
 	ops = append(ops, polygonPathOps(points)...)
 	ops = append(ops, content.Op{Name: "S"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillPolygon(pa builder.PageAccess, pageIndex int, points []float64, c style.Color) {
@@ -274,7 +274,7 @@ func (d drawer) FillPolygon(pa builder.PageAccess, pageIndex int, points []float
 	ops = append(ops, fillColorOps(c)...)
 	ops = append(ops, polygonPathOps(points)...)
 	ops = append(ops, content.Op{Name: "f"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 func (d drawer) FillStrokePolygon(pa builder.PageAccess, pageIndex int, points []float64, fill style.Color, stroke style.LineStyle) {
@@ -286,7 +286,7 @@ func (d drawer) FillStrokePolygon(pa builder.PageAccess, pageIndex int, points [
 	ops = append(ops, fillColorOps(fill)...)
 	ops = append(ops, polygonPathOps(points)...)
 	ops = append(ops, content.Op{Name: "B"}, content.Op{Name: "Q"})
-	pa.PageAt(pageIndex).GraphicRuns = append(pa.PageAt(pageIndex).GraphicRuns, builder.GraphicRun{Ops: ops})
+	pa.PageAt(pageIndex).AddGraphic(builder.GraphicRun{Ops: ops})
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ func addGraphicRunWithState(pa builder.PageAccess, pageIndex int, state style.Gr
 
 	ops = append(ops, body...)
 	ops = append(ops, content.Op{Name: "Q"})
-	ps.GraphicRuns = append(ps.GraphicRuns, builder.GraphicRun{Ops: ops, ExtGStates: extGStates})
+	ps.AddGraphic(builder.GraphicRun{Ops: ops, ExtGStates: extGStates})
 }
 
 func strokeStateOps(ls style.LineStyle) []content.Op {

@@ -1,6 +1,11 @@
 package doc
 
 import (
+	"bytes"
+	"fmt"
+	"image/color"
+	"image/jpeg"
+
 	imgpkg "github.com/gsoultan/gpdf/doc/image"
 	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
 )
@@ -44,8 +49,45 @@ func (b *DocumentBuilder) DrawImageWith(opts ImageOptions) *DocumentBuilder {
 		IsArtifact: opts.IsArtifact,
 		HasMask:    opts.HasMask, Mask: opts.Mask, MaskWidth: opts.MaskWidth, MaskHeight: opts.MaskHeight,
 	}
-	b.pc.pages[pageIndex].ImageRuns = append(b.pc.pages[pageIndex].ImageRuns, run)
+	if err := decodeImageFile(&run); err != nil {
+		b.setErr(fmt.Errorf("DrawImageWith: %w", err))
+		return b
+	}
+	b.pc.pages[pageIndex].AddImage(run)
 	return b
+}
+
+// decodeImageFile handles a run whose data is a PNG or JPEG file rather than raw samples
+// (no pixel size given): a PNG is decoded with its alpha channel as a soft mask, and a
+// JPEG is passed through with DCTDecode.
+func decodeImageFile(run *imageRun) error {
+	if run.WidthPx > 0 && run.HeightPx > 0 {
+		return nil
+	}
+	switch {
+	case bytes.HasPrefix(run.Raw, []byte("\x89PNG\r\n\x1a\n")):
+		mask, maskW, maskH, hasMask := run.Mask, run.MaskWidth, run.MaskHeight, run.HasMask
+		if err := run.SetPNG(run.Raw); err != nil {
+			return err
+		}
+		if hasMask && !run.HasMask {
+			run.HasMask, run.Mask, run.MaskWidth, run.MaskHeight = true, mask, maskW, maskH
+		}
+	case bytes.HasPrefix(run.Raw, []byte("\xff\xd8")):
+		w, h, isJPEG, _, err := imgpkg.DetectDimensions(run.Raw)
+		if err != nil {
+			return err
+		}
+		if !isJPEG {
+			return fmt.Errorf("unsupported image data")
+		}
+		cs := "DeviceRGB"
+		if cfg, err := jpegColorComponents(run.Raw); err == nil {
+			cs = cfg
+		}
+		run.WidthPx, run.HeightPx, run.BitsPerComponent, run.ColorSpace, run.IsJPEG = w, h, 8, cs, true
+	}
+	return nil
 }
 
 // DrawTaggedImageWith queues a tagged image using the options struct.
@@ -81,6 +123,25 @@ func (b *DocumentBuilder) DrawTaggedImageWith(opts ImageOptions) *DocumentBuilde
 		BitsPerComponent: bpc, ColorSpace: colorSpace,
 		IsJPEG: opts.IsJPEG, MCID: mcid, HasMCID: true,
 	}
-	ps.ImageRuns = append(ps.ImageRuns, run)
+	if err := decodeImageFile(&run); err != nil {
+		b.setErr(fmt.Errorf("DrawTaggedImageWith: %w", err))
+		return b
+	}
+	ps.AddImage(run)
 	return b
+}
+
+// jpegColorComponents returns the PDF color space of a JPEG from its component count.
+func jpegColorComponents(data []byte) (string, error) {
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	switch cfg.ColorModel {
+	case color.GrayModel:
+		return "DeviceGray", nil
+	case color.CMYKModel:
+		return "DeviceCMYK", nil
+	}
+	return "DeviceRGB", nil
 }

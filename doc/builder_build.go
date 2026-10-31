@@ -227,6 +227,7 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 						model.Name("Height"):           model.Integer(int64(im.MaskHeight)),
 						model.Name("BitsPerComponent"): model.Integer(8),
 						model.Name("ColorSpace"):       model.Name("DeviceGray"),
+						model.Name("Filter"):           model.Name("FlateDecode"),
 						model.Name("Length"):           model.Integer(int64(len(im.Mask))),
 					}
 					objs[maskNum] = &model.Stream{Dict: maskDict, Content: im.Mask}

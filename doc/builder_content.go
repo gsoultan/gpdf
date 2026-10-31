@@ -23,326 +23,379 @@ func (b *DocumentBuilder) buildGraphicsOps(page *pageSpec, pageHeight float64) [
 // buildTextOps returns content stream ops from text runs and a font resource map (baseName -> resName).
 // If embeddedFonts is nil, uses b.fc.embeddedFonts.
 func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embeddedFonts map[string]*embeddedFontUsage) ([]content.Op, map[string]model.Name) {
-	fontRes := make(map[string]model.Name)
+	tw := b.newTextOpsWriter(embeddedFonts)
 	var ops []content.Op
-	currentColorSet := false
-	var currentColor [3]float64
-
-	ef := b.fc.embeddedFonts
-	if embeddedFonts != nil {
-		ef = embeddedFonts
+	for _, r := range page.TextRuns {
+		ops = tw.add(ops, r)
 	}
+	return ops, tw.fontRes
+}
+
+// textOpsWriter turns text runs into content stream ops. It tracks the fill color and the
+// text state it last set, so consecutive runs only emit the operators that change.
+type textOpsWriter struct {
+	b               *DocumentBuilder
+	ef              map[string]*embeddedFontUsage
+	fontRes         map[string]model.Name
+	currentColorSet bool
+	currentColor    [3]float64
 	// Tc, Tw, Tz and Tr are graphics-state parameters: they survive ET and apply to every
 	// later text object. Track them and emit an operator whenever a run needs a different
 	// value, so one run's letter spacing (or synthetic bold) never leaks into the next.
 	// The state is unknown at the start because these ops may follow other content.
-	var ts textStateTracker
-	for _, r := range page.TextRuns {
-		baseName := r.FontName
-		if baseName == "" {
-			baseName = "Helvetica"
-		}
-		resName, ok := fontRes[baseName]
-		if !ok {
-			resName = model.Name(fmt.Sprintf("F%d", len(fontRes)+1))
-			fontRes[baseName] = resName
-		}
-		size := r.FontSize
-		if size <= 0 {
-			size = 12
-		}
-		if !r.UseDefaultColor {
-			if !currentColorSet || r.TextColorRGB != currentColor {
-				ops = append(ops,
-					content.Op{
-						Name: "rg",
-						Args: []model.Object{
-							model.Real(r.TextColorRGB[0]),
-							model.Real(r.TextColorRGB[1]),
-							model.Real(r.TextColorRGB[2]),
-						},
-					},
-				)
-				currentColor = r.TextColorRGB
-				currentColorSet = true
-			}
-		}
-		if r.IsArtifact {
+	ts textStateTracker
+}
+
+func (b *DocumentBuilder) newTextOpsWriter(embeddedFonts map[string]*embeddedFontUsage) *textOpsWriter {
+	ef := b.fc.embeddedFonts
+	if embeddedFonts != nil {
+		ef = embeddedFonts
+	}
+	return &textOpsWriter{b: b, ef: ef, fontRes: make(map[string]model.Name)}
+}
+
+// forget drops the tracked fill color and text state. Call it after other content
+// (graphics or images) that may have changed them.
+func (w *textOpsWriter) forget() {
+	w.currentColorSet = false
+	w.ts = textStateTracker{}
+}
+
+// add appends the ops for one text run.
+func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
+	b := w.b
+	fontRes, ef := w.fontRes, w.ef
+	baseName := r.FontName
+	if baseName == "" {
+		baseName = "Helvetica"
+	}
+	resName, ok := fontRes[baseName]
+	if !ok {
+		resName = model.Name(fmt.Sprintf("F%d", len(fontRes)+1))
+		fontRes[baseName] = resName
+	}
+	size := r.FontSize
+	if size <= 0 {
+		size = 12
+	}
+	if !r.UseDefaultColor {
+		if !w.currentColorSet || r.TextColorRGB != w.currentColor {
 			ops = append(ops,
 				content.Op{
-					Name: "BDC",
+					Name: "rg",
 					Args: []model.Object{
-						model.Name("Artifact"),
-						model.Dict{model.Name("Type"): model.Name("Pagination")},
+						model.Real(r.TextColorRGB[0]),
+						model.Real(r.TextColorRGB[1]),
+						model.Real(r.TextColorRGB[2]),
 					},
 				},
 			)
-		} else if r.HasMCID {
-			ops = append(ops,
-				content.Op{
-					Name: "BDC",
-					Args: []model.Object{
-						model.Name("Span"),
-						model.Dict{model.Name("MCID"): model.Integer(int64(r.MCID))},
-					},
-				},
-			)
-		}
-
-		var textArg model.Object
-		useTJ := false
-		if eu, ok := ef[baseName]; ok {
-			eu.markText(r.Text)
-			runes := []rune(r.Text)
-			scale := 1000.0 / float64(eu.font.UnitsPerEm())
-			var tjArray model.Array
-			var currentStr strings.Builder
-			var lastR rune
-			hasKern := false
-
-			for i, currR := range runes {
-				if i > 0 {
-					k := eu.font.Kern(lastR, currR)
-					if k != 0 {
-						if currentStr.Len() > 0 {
-							tjArray = append(tjArray, model.HexString(eu.font.Encode(currentStr.String())))
-							currentStr.Reset()
-						}
-						// TJ displacement: positive moves left, negative moves right.
-						// Font kern: negative moves closer (right for left char).
-						// So -kern * scale.
-						tjArray = append(tjArray, model.Real(-float64(k)*scale))
-						hasKern = true
-					}
-				}
-				currentStr.WriteRune(currR)
-				lastR = currR
-			}
-
-			if hasKern {
-				if currentStr.Len() > 0 {
-					tjArray = append(tjArray, model.HexString(eu.font.Encode(currentStr.String())))
-				}
-				textArg = tjArray
-				useTJ = true
-			} else {
-				textArg = model.HexString(eu.font.Encode(r.Text))
-			}
-		} else if r.FontName == "Symbol" {
-			textArg = model.String(symbolEncode(r.Text))
-		} else if r.FontName == "ZapfDingbats" {
-			textArg = model.String(zapfDingbatsEncode(r.Text))
-		} else {
-			textArg = model.String(winAnsiEncode(r.Text))
-		}
-
-		btOps := []content.Op{
-			{Name: "BT", Args: nil},
-		}
-
-		if r.Rotation != 0 {
-			rad := r.Rotation * math.Pi / 180
-			cosA, sinA := math.Cos(rad), math.Sin(rad)
-			a, b, c, d := cosA, sinA, -sinA, cosA
-			if r.SyntheticItalic {
-				// Combine italic shear with rotation
-				c += 0.33 * a
-				d += 0.33 * b
-			}
-			btOps = append(btOps, content.Op{
-				Name: "Tm",
-				Args: []model.Object{
-					model.Real(a), model.Real(b),
-					model.Real(c), model.Real(d),
-					model.Real(r.X), model.Real(r.Y),
-				},
-			})
-		} else if r.SyntheticItalic {
-			btOps = append(btOps, content.Op{
-				Name: "Tm",
-				Args: []model.Object{
-					model.Real(1), model.Real(0),
-					model.Real(0.33), model.Real(1),
-					model.Real(r.X), model.Real(r.Y),
-				},
-			})
-		} else {
-			btOps = append(btOps, content.Op{
-				Name: "Td",
-				Args: []model.Object{model.Real(r.X), model.Real(r.Y)},
-			})
-		}
-
-		btOps = append(btOps, content.Op{Name: "Tf", Args: []model.Object{resName, model.Real(size)}})
-
-		renderMode := int64(0)
-		if r.SyntheticBold {
-			renderMode = 2 // fill then stroke
-		}
-		hScale := r.HorizontalScale
-		if hScale == 0 {
-			hScale = 100
-		}
-		btOps = ts.apply(btOps, renderMode, hScale, r.LetterSpacing, r.WordSpacing)
-		if r.SyntheticBold {
-			btOps = append(btOps, content.Op{Name: "w", Args: []model.Object{model.Real(size * 0.03)}})
-		}
-		opName := "Tj"
-		if useTJ {
-			opName = "TJ"
-		}
-		btOps = append(btOps,
-			content.Op{Name: opName, Args: []model.Object{textArg}},
-			content.Op{Name: "ET", Args: nil},
-		)
-		ops = append(ops, btOps...)
-
-		if r.Underline {
-			tw := b.textWidth(r.Text, size, baseName)
-			uy := r.Y - size*0.1
-			thick := size * 0.07
-			ops = append(ops,
-				content.Op{Name: "q"},
-				content.Op{Name: "w", Args: []model.Object{model.Real(thick)}},
-				content.Op{Name: "RG", Args: []model.Object{
-					model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
-				}},
-				content.Op{Name: "m", Args: []model.Object{model.Real(r.X), model.Real(uy)}},
-				content.Op{Name: "l", Args: []model.Object{model.Real(r.X + tw), model.Real(uy)}},
-				content.Op{Name: "S"},
-				content.Op{Name: "Q"},
-			)
-		}
-		if r.Strikethrough {
-			tw := b.textWidth(r.Text, size, baseName)
-			sy := r.Y + size*0.3
-			thick := size * 0.07
-			ops = append(ops,
-				content.Op{Name: "q"},
-				content.Op{Name: "w", Args: []model.Object{model.Real(thick)}},
-				content.Op{Name: "RG", Args: []model.Object{
-					model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
-				}},
-				content.Op{Name: "m", Args: []model.Object{model.Real(r.X), model.Real(sy)}},
-				content.Op{Name: "l", Args: []model.Object{model.Real(r.X + tw), model.Real(sy)}},
-				content.Op{Name: "S"},
-				content.Op{Name: "Q"},
-			)
-		}
-
-		if r.IsArtifact || r.HasMCID {
-			ops = append(ops, content.Op{Name: "EMC", Args: nil})
+			w.currentColor = r.TextColorRGB
+			w.currentColorSet = true
 		}
 	}
-	return ops, fontRes
+	if r.IsArtifact {
+		ops = append(ops,
+			content.Op{
+				Name: "BDC",
+				Args: []model.Object{
+					model.Name("Artifact"),
+					model.Dict{model.Name("Type"): model.Name("Pagination")},
+				},
+			},
+		)
+	} else if r.HasMCID {
+		ops = append(ops,
+			content.Op{
+				Name: "BDC",
+				Args: []model.Object{
+					model.Name("Span"),
+					model.Dict{model.Name("MCID"): model.Integer(int64(r.MCID))},
+				},
+			},
+		)
+	}
+
+	var textArg model.Object
+	useTJ := false
+	if eu, ok := ef[baseName]; ok {
+		eu.markText(r.Text)
+		runes := []rune(r.Text)
+		scale := 1000.0 / float64(eu.font.UnitsPerEm())
+		var tjArray model.Array
+		var currentStr strings.Builder
+		var lastR rune
+		hasKern := false
+
+		for i, currR := range runes {
+			if i > 0 {
+				k := eu.font.Kern(lastR, currR)
+				if k != 0 {
+					if currentStr.Len() > 0 {
+						tjArray = append(tjArray, model.HexString(eu.font.Encode(currentStr.String())))
+						currentStr.Reset()
+					}
+					// TJ displacement: positive moves left, negative moves right.
+					// Font kern: negative moves closer (right for left char).
+					// So -kern * scale.
+					tjArray = append(tjArray, model.Real(-float64(k)*scale))
+					hasKern = true
+				}
+			}
+			currentStr.WriteRune(currR)
+			lastR = currR
+		}
+
+		if hasKern {
+			if currentStr.Len() > 0 {
+				tjArray = append(tjArray, model.HexString(eu.font.Encode(currentStr.String())))
+			}
+			textArg = tjArray
+			useTJ = true
+		} else {
+			textArg = model.HexString(eu.font.Encode(r.Text))
+		}
+	} else if r.FontName == "Symbol" {
+		textArg = model.String(symbolEncode(r.Text))
+	} else if r.FontName == "ZapfDingbats" {
+		textArg = model.String(zapfDingbatsEncode(r.Text))
+	} else {
+		textArg = model.String(winAnsiEncode(r.Text))
+	}
+
+	btOps := []content.Op{
+		{Name: "BT", Args: nil},
+	}
+
+	if r.Rotation != 0 {
+		rad := r.Rotation * math.Pi / 180
+		cosA, sinA := math.Cos(rad), math.Sin(rad)
+		a, b, c, d := cosA, sinA, -sinA, cosA
+		if r.SyntheticItalic {
+			// Combine italic shear with rotation
+			c += 0.33 * a
+			d += 0.33 * b
+		}
+		btOps = append(btOps, content.Op{
+			Name: "Tm",
+			Args: []model.Object{
+				model.Real(a), model.Real(b),
+				model.Real(c), model.Real(d),
+				model.Real(r.X), model.Real(r.Y),
+			},
+		})
+	} else if r.SyntheticItalic {
+		btOps = append(btOps, content.Op{
+			Name: "Tm",
+			Args: []model.Object{
+				model.Real(1), model.Real(0),
+				model.Real(0.33), model.Real(1),
+				model.Real(r.X), model.Real(r.Y),
+			},
+		})
+	} else {
+		btOps = append(btOps, content.Op{
+			Name: "Td",
+			Args: []model.Object{model.Real(r.X), model.Real(r.Y)},
+		})
+	}
+
+	btOps = append(btOps, content.Op{Name: "Tf", Args: []model.Object{resName, model.Real(size)}})
+
+	renderMode := int64(0)
+	if r.SyntheticBold {
+		renderMode = 2 // fill then stroke
+	}
+	hScale := r.HorizontalScale
+	if hScale == 0 {
+		hScale = 100
+	}
+	btOps = w.ts.apply(btOps, renderMode, hScale, r.LetterSpacing, r.WordSpacing)
+	if r.SyntheticBold {
+		btOps = append(btOps, content.Op{Name: "w", Args: []model.Object{model.Real(size * 0.03)}})
+	}
+	opName := "Tj"
+	if useTJ {
+		opName = "TJ"
+	}
+	btOps = append(btOps,
+		content.Op{Name: opName, Args: []model.Object{textArg}},
+		content.Op{Name: "ET", Args: nil},
+	)
+	ops = append(ops, btOps...)
+
+	if r.Underline {
+		tw := b.textWidth(r.Text, size, baseName)
+		uy := r.Y - size*0.1
+		thick := size * 0.07
+		ops = append(ops,
+			content.Op{Name: "q"},
+			content.Op{Name: "w", Args: []model.Object{model.Real(thick)}},
+			content.Op{Name: "RG", Args: []model.Object{
+				model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
+			}},
+			content.Op{Name: "m", Args: []model.Object{model.Real(r.X), model.Real(uy)}},
+			content.Op{Name: "l", Args: []model.Object{model.Real(r.X + tw), model.Real(uy)}},
+			content.Op{Name: "S"},
+			content.Op{Name: "Q"},
+		)
+	}
+	if r.Strikethrough {
+		tw := b.textWidth(r.Text, size, baseName)
+		sy := r.Y + size*0.3
+		thick := size * 0.07
+		ops = append(ops,
+			content.Op{Name: "q"},
+			content.Op{Name: "w", Args: []model.Object{model.Real(thick)}},
+			content.Op{Name: "RG", Args: []model.Object{
+				model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
+			}},
+			content.Op{Name: "m", Args: []model.Object{model.Real(r.X), model.Real(sy)}},
+			content.Op{Name: "l", Args: []model.Object{model.Real(r.X + tw), model.Real(sy)}},
+			content.Op{Name: "S"},
+			content.Op{Name: "Q"},
+		)
+	}
+
+	if r.IsArtifact || r.HasMCID {
+		ops = append(ops, content.Op{Name: "EMC", Args: nil})
+	}
+	return ops
 }
 
 // buildImageOps returns content stream ops from image runs and XObject resources.
 // Also returns imageExtGStates (opacity ExtGState dicts) to merge into page resources.
 func (b *DocumentBuilder) buildImageOps(page *pageSpec, pageHeight float64, imageStreamNums []int) ([]content.Op, model.Dict, model.Dict) {
-	xobj := make(model.Dict)
-	imageGS := model.Dict{}
+	iw := newImageOpsWriter(imageStreamNums)
 	var ops []content.Op
-	imageGSIndex := 0
-
 	for i, im := range page.ImageRuns {
-		imName := model.Name("Im" + fmt.Sprintf("%d", i+1))
-		w, h := im.WidthPt, im.HeightPt
-		if w <= 0 {
-			w = float64(im.WidthPx)
-		}
-		if h <= 0 {
-			h = float64(im.HeightPx)
-		}
-		if i < len(imageStreamNums) {
-			xobj[imName] = model.Ref{ObjectNumber: imageStreamNums[i], Generation: 0}
-		}
-		if im.IsArtifact {
-			ops = append(ops,
-				content.Op{
-					Name: "BDC",
-					Args: []model.Object{
-						model.Name("Artifact"),
-						model.Dict{model.Name("Type"): model.Name("Pagination")},
-					},
-				},
-			)
-		} else if im.HasMCID {
-			ops = append(ops,
-				content.Op{
-					Name: "BDC",
-					Args: []model.Object{
-						model.Name("Span"),
-						model.Dict{model.Name("MCID"): model.Integer(int64(im.MCID))},
-					},
-				},
-			)
-		}
-		ops = append(ops, content.Op{Name: "q", Args: nil})
-		if im.Opacity > 0 && im.Opacity < 1 {
-			imageGSIndex++
-			gsName := model.Name(fmt.Sprintf("IMGS%d", imageGSIndex))
-			imageGS[gsName] = model.Dict{
-				model.Name("Type"): model.Name("ExtGState"),
-				model.Name("ca"):   model.Real(im.Opacity),
-				model.Name("CA"):   model.Real(im.Opacity),
-			}
-			ops = append(ops, content.Op{Name: "gs", Args: []model.Object{gsName}})
-		}
-		if im.ClipCircle {
-			ops = append(ops, circlePathOps(im.ClipCX, im.ClipCY, im.ClipR)...)
-			ops = append(ops,
-				content.Op{Name: "W", Args: nil},
-				content.Op{Name: "n", Args: nil},
-			)
-		}
-		var a, bb, c, d, e, f float64
-		// Prefer explicit matrix when provided
-		if im.Matrix != ([6]float64{}) {
-			a, bb, c, d, e, f = im.Matrix[0], im.Matrix[1], im.Matrix[2], im.Matrix[3], im.Matrix[4], im.Matrix[5]
-		} else if im.RotateDeg != 0 {
-			θ := im.RotateDeg * math.Pi / 180
-			cosθ := math.Cos(θ)
-			sinθ := math.Sin(θ)
-			cx := im.X + w/2
-			cy := im.Y + h/2
-			a = w * cosθ
-			bb = -w * sinθ
-			c = h * sinθ
-			d = h * cosθ
-			e = cx - w/2*cosθ - h/2*sinθ
-			f = cy + w/2*sinθ - h/2*cosθ
-		} else {
-			a, bb, c, d, e, f = w, 0, 0, h, im.X, im.Y
-		}
-		ops = append(ops,
-			content.Op{Name: "cm", Args: []model.Object{
-				model.Real(a), model.Real(bb), model.Real(c), model.Real(d),
-				model.Real(e), model.Real(f),
-			}},
-			content.Op{Name: "Do", Args: []model.Object{imName}},
-			content.Op{Name: "Q", Args: nil},
-		)
-		if im.IsArtifact || im.HasMCID {
-			ops = append(ops, content.Op{Name: "EMC", Args: nil})
-		}
+		ops = iw.add(ops, i, im)
 	}
-	return ops, xobj, imageGS
+	return ops, iw.xobj, iw.gs
+}
+
+// imageOpsWriter turns image runs into content stream ops and collects the XObject and
+// opacity ExtGState resources they use. Image i is always named /Im<i+1>.
+type imageOpsWriter struct {
+	streamNums []int
+	xobj       model.Dict
+	gs         model.Dict
+	gsIndex    int
+}
+
+func newImageOpsWriter(streamNums []int) *imageOpsWriter {
+	return &imageOpsWriter{streamNums: streamNums, xobj: model.Dict{}, gs: model.Dict{}}
+}
+
+// add appends the ops that draw image run i.
+func (iw *imageOpsWriter) add(ops []content.Op, i int, im imageRun) []content.Op {
+	imageStreamNums := iw.streamNums
+	xobj, imageGS := iw.xobj, iw.gs
+	imName := model.Name("Im" + fmt.Sprintf("%d", i+1))
+	w, h := im.WidthPt, im.HeightPt
+	if w <= 0 {
+		w = float64(im.WidthPx)
+	}
+	if h <= 0 {
+		h = float64(im.HeightPx)
+	}
+	if i < len(imageStreamNums) {
+		xobj[imName] = model.Ref{ObjectNumber: imageStreamNums[i], Generation: 0}
+	}
+	if im.IsArtifact {
+		ops = append(ops,
+			content.Op{
+				Name: "BDC",
+				Args: []model.Object{
+					model.Name("Artifact"),
+					model.Dict{model.Name("Type"): model.Name("Pagination")},
+				},
+			},
+		)
+	} else if im.HasMCID {
+		ops = append(ops,
+			content.Op{
+				Name: "BDC",
+				Args: []model.Object{
+					model.Name("Span"),
+					model.Dict{model.Name("MCID"): model.Integer(int64(im.MCID))},
+				},
+			},
+		)
+	}
+	ops = append(ops, content.Op{Name: "q", Args: nil})
+	if im.Opacity > 0 && im.Opacity < 1 {
+		iw.gsIndex++
+		gsName := model.Name(fmt.Sprintf("IMGS%d", iw.gsIndex))
+		imageGS[gsName] = model.Dict{
+			model.Name("Type"): model.Name("ExtGState"),
+			model.Name("ca"):   model.Real(im.Opacity),
+			model.Name("CA"):   model.Real(im.Opacity),
+		}
+		ops = append(ops, content.Op{Name: "gs", Args: []model.Object{gsName}})
+	}
+	if im.ClipCircle {
+		ops = append(ops, circlePathOps(im.ClipCX, im.ClipCY, im.ClipR)...)
+		ops = append(ops,
+			content.Op{Name: "W", Args: nil},
+			content.Op{Name: "n", Args: nil},
+		)
+	}
+	var a, bb, c, d, e, f float64
+	// Prefer explicit matrix when provided
+	if im.Matrix != ([6]float64{}) {
+		a, bb, c, d, e, f = im.Matrix[0], im.Matrix[1], im.Matrix[2], im.Matrix[3], im.Matrix[4], im.Matrix[5]
+	} else if im.RotateDeg != 0 {
+		θ := im.RotateDeg * math.Pi / 180
+		cosθ := math.Cos(θ)
+		sinθ := math.Sin(θ)
+		cx := im.X + w/2
+		cy := im.Y + h/2
+		a = w * cosθ
+		bb = -w * sinθ
+		c = h * sinθ
+		d = h * cosθ
+		e = cx - w/2*cosθ - h/2*sinθ
+		f = cy + w/2*sinθ - h/2*cosθ
+	} else {
+		a, bb, c, d, e, f = w, 0, 0, h, im.X, im.Y
+	}
+	ops = append(ops,
+		content.Op{Name: "cm", Args: []model.Object{
+			model.Real(a), model.Real(bb), model.Real(c), model.Real(d),
+			model.Real(e), model.Real(f),
+		}},
+		content.Op{Name: "Do", Args: []model.Object{imName}},
+		content.Op{Name: "Q", Args: nil},
+	)
+	if im.IsArtifact || im.HasMCID {
+		ops = append(ops, content.Op{Name: "EMC", Args: nil})
+	}
+	return ops
 }
 
 // buildPageContent returns content stream bytes and /Resources for graphics, text, and image runs.
-// Draw order: graphics first (backgrounds/borders), then text, then images.
+// The paint order is set by SetPaintOrder: by default graphics first (backgrounds and
+// borders), then text, then images; with PaintInCallOrder, runs paint in the order they were added.
 // When compression is enabled and effective, returns errFlateCompressed as the error.
 func (b *DocumentBuilder) buildPageContent(page *pageSpec, pageHeight float64, imageStreamNums []int) ([]byte, model.Dict, error) {
 	if len(page.GraphicRuns) == 0 && len(page.TextRuns) == 0 && len(page.ImageRuns) == 0 {
 		return nil, nil, fmt.Errorf("no content")
 	}
 
-	ops := b.buildGraphicsOps(page, pageHeight)
-	textOps, fontRes := b.buildTextOps(page, pageHeight, nil)
-	ops = append(ops, textOps...)
-	imageOps, xobj, imageGS := b.buildImageOps(page, pageHeight, imageStreamNums)
-	ops = append(ops, imageOps...)
+	var ops []content.Op
+	var fontRes map[string]model.Name
+	var xobj, imageGS model.Dict
+	if b.paintOrder == PaintInCallOrder {
+		ops, fontRes, xobj, imageGS = b.buildOpsInCallOrder(page, imageStreamNums)
+	} else {
+		ops = b.buildGraphicsOps(page, pageHeight)
+		textOps, fr := b.buildTextOps(page, pageHeight, nil)
+		ops = append(ops, textOps...)
+		imageOps, xo, gs := b.buildImageOps(page, pageHeight, imageStreamNums)
+		ops = append(ops, imageOps...)
+		fontRes, xobj, imageGS = fr, xo, gs
+	}
 
 	contentBytes, err := content.EncodeBytes(ops)
 	if err != nil {
@@ -414,7 +467,9 @@ func (b *DocumentBuilder) imageXObjectStream(im imageRun) *model.Stream {
 		model.Name("Height"):           model.Integer(int64(im.HeightPx)),
 		model.Name("BitsPerComponent"): model.Integer(int64(im.BitsPerComponent)),
 		model.Name("ColorSpace"):       model.Name(im.ColorSpace),
-		model.Name("Length"):           model.Integer(int64(len(im.Raw))),
+		// Content holds the raw samples; the writer applies the filter when saving.
+		model.Name("Filter"): model.Name("FlateDecode"),
+		model.Name("Length"): model.Integer(int64(len(im.Raw))),
 	}
 	return &model.Stream{Dict: dict, Content: im.Raw}
 }

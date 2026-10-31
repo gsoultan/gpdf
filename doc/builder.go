@@ -28,6 +28,7 @@ type DocumentBuilder struct {
 	forms     form.Support
 
 	noCompressContent bool
+	paintOrder        PaintOrder
 	iccProfile        *ICCProfile
 
 	err error

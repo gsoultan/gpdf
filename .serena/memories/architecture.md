@@ -24,6 +24,10 @@ Key flows
 - Open: `doc.Open` → `reader/file` → `reader.PDFReader` → `documentCore.Resolve` (parse at xref offset, decrypt strings/streams per object, decode filters, cache with FIFO limit).
 - Save: `file.Document.Save` → `writer.Write` resolves each object with its real generation and rewrites streams, re-encoding the full `/Filter` chain (Flate/LZW without predictor).
 - Merge/Split/Extract: `copyPages` (`doc/page_copier.go`) reserves numbers for selected pages, drops /Parent /StructParents /B, and `objectCloner` deep-copies the rest (refs to unselected Page/Pages become null) into a fresh `builtDocument`.
+- Builder paint: `buildPageContent` uses `buildGraphicsOps`/`buildTextOps`/`buildImageOps` (layered, default) or
+  `buildOpsInCallOrder` (`doc/paint_order.go`, sorted by run `Seq`); both go through `textOpsWriter` and
+  `imageOpsWriter`. In call order, the text writer forgets its color/text state after each graphic run.
+- Builder images: PNG → `image.DecodePNG` → `ImageRun.SetPNG` (alpha as /SMask); raw images and masks are FlateDecode.
 - Builder text: `buildTextOps` tracks Tc/Tw/Tz/Tr (`textStateTracker`) so text state never leaks between runs; links get /Border [0 0 0].
 
 Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-10-31 the graph is built from 036d17f and is stale for the fix branch: graphify was not installable in that session, so rerun `graphify update .`.
