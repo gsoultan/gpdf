@@ -32,14 +32,23 @@ func (f *Font) Subset(usedGlyphIDs map[uint16]bool) ([]byte, error) {
 		f.collectCompositeComponents(glyfData, offsets, gid, allGlyphs)
 	}
 
+	// Glyph IDs are preserved, so the subset only needs glyphs up to the highest
+	// used one: everything after it is dropped from glyf, loca and hmtx.
+	numGlyphs := 1
+	for gid := range allGlyphs {
+		if int(gid)+1 > numGlyphs && int(gid) < f.numGlyphs {
+			numGlyphs = int(gid) + 1
+		}
+	}
+
 	// Build new glyf: keep used glyph data, zero-out unused.
 	var newGlyf []byte
-	newLoca := make([]uint32, f.numGlyphs+1)
-	for gid := range f.numGlyphs {
+	newLoca := make([]uint32, numGlyphs+1)
+	for gid := range numGlyphs {
 		newLoca[gid] = uint32(len(newGlyf))
 		start := offsets[gid]
 		end := offsets[gid+1]
-		if allGlyphs[uint16(gid)] && end > start {
+		if allGlyphs[uint16(gid)] && end > start && int(end) <= len(glyfData) {
 			newGlyf = append(newGlyf, glyfData[start:end]...)
 		}
 		// Pad to even boundary.
@@ -47,9 +56,9 @@ func (f *Font) Subset(usedGlyphIDs map[uint16]bool) ([]byte, error) {
 			newGlyf = append(newGlyf, 0)
 		}
 	}
-	newLoca[f.numGlyphs] = uint32(len(newGlyf))
+	newLoca[numGlyphs] = uint32(len(newGlyf))
 
-	return f.rebuildFont(newGlyf, newLoca)
+	return f.rebuildFont(numGlyphs, newGlyf, newLoca)
 }
 
 func (f *Font) parseLocaOffsets(data []byte) []uint32 {
@@ -120,40 +129,63 @@ func (f *Font) collectCompositeComponents(glyfData []byte, offsets []uint32, gid
 	}
 }
 
-// rebuildFont constructs a valid TrueType file with updated glyf and loca tables.
-func (f *Font) rebuildFont(newGlyf []byte, newLoca []uint32) ([]byte, error) {
-	// Tables to include in the subset font.
-	keepTags := []string{
-		"head", "hhea", "maxp", "OS/2", "name", "cmap", "post",
-		"cvt ", "fpgm", "prep",
-	}
+// rebuildFont constructs a TrueType file with numGlyphs glyphs and the given glyf
+// and loca tables. Only the tables a PDF consumer needs for an Identity-H
+// CIDFontType2 are kept (ISO 32000-1 §9.9 Table 126): name, cmap and the glyph
+// names in post are dropped, and maxp, hhea and hmtx are cut to numGlyphs.
+func (f *Font) rebuildFont(numGlyphs int, newGlyf []byte, newLoca []uint32) ([]byte, error) {
 	type tableEntry struct {
 		tag  string
 		data []byte
 	}
 	var entries []tableEntry
-	for _, tag := range keepTags {
+	add := func(tag string, data []byte) {
+		entries = append(entries, tableEntry{tag: tag, data: data})
+	}
+	for _, tag := range []string{"head", "OS/2", "cvt ", "fpgm", "prep"} {
 		d, err := f.tableData(tag)
 		if err != nil {
 			continue // optional tables may be absent
 		}
-		cp := make([]byte, len(d))
-		copy(cp, d)
-		entries = append(entries, tableEntry{tag: tag, data: cp})
+		add(tag, append([]byte(nil), d...))
 	}
 
-	// Build loca table.
-	locaBytes := f.buildLocaBytes(newLoca)
-	entries = append(entries, tableEntry{tag: "loca", data: locaBytes})
-	entries = append(entries, tableEntry{tag: "glyf", data: newGlyf})
-
-	// Build hmtx with original widths (glyph IDs preserved).
-	hmtxData, err := f.tableData("hmtx")
-	if err == nil {
-		cp := make([]byte, len(hmtxData))
-		copy(cp, hmtxData)
-		entries = append(entries, tableEntry{tag: "hmtx", data: cp})
+	numHMetrics := min(f.numHMetrics, numGlyphs)
+	if numHMetrics < 1 {
+		numHMetrics = 1
 	}
+	if d, err := f.tableData("hhea"); err == nil && len(d) >= 36 {
+		cp := append([]byte(nil), d...)
+		binary.BigEndian.PutUint16(cp[34:36], uint16(numHMetrics))
+		add("hhea", cp)
+	}
+	if d, err := f.tableData("maxp"); err == nil && len(d) >= 6 {
+		cp := append([]byte(nil), d...)
+		binary.BigEndian.PutUint16(cp[4:6], uint16(numGlyphs))
+		add("maxp", cp)
+	}
+	if d, err := f.tableData("hmtx"); err == nil {
+		// numHMetrics longHorMetric records, then one left side bearing per
+		// remaining glyph.
+		n := numHMetrics*4 + (numGlyphs-numHMetrics)*2
+		cp := make([]byte, n)
+		copy(cp, d[:min(len(d), numHMetrics*4)])
+		lsbStart := f.numHMetrics * 4
+		if numGlyphs > numHMetrics && lsbStart < len(d) {
+			copy(cp[numHMetrics*4:], d[lsbStart:])
+		}
+		add("hmtx", cp)
+	}
+	// post format 3.0 keeps the header values and carries no glyph names.
+	post := make([]byte, 32)
+	if d, err := f.tableData("post"); err == nil {
+		copy(post, d)
+	}
+	binary.BigEndian.PutUint32(post[0:4], 0x00030000)
+	add("post", post)
+
+	add("loca", f.buildLocaBytes(newLoca))
+	add("glyf", newGlyf)
 
 	numTables := len(entries)
 	headerSize := 12 + numTables*16
@@ -211,7 +243,6 @@ func (f *Font) rebuildFont(newGlyf []byte, newLoca []uint32) ([]byte, error) {
 		if e.tag == "head" && len(e.data) >= 12 {
 			adj := 0xB1B0AFBA - tableChecksum(out)
 			headOff := offsets[i]
-			_ = i
 			binary.BigEndian.PutUint32(out[headOff+8:headOff+12], adj)
 			break
 		}

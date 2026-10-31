@@ -65,6 +65,13 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
 - FIXED (round 2, found by FuzzReadDocument) — a stray `)` in a content stream hung text extraction forever
   (`content/impl/tokenizer.go` readOperator). [TestParseStrayDelimiterTerminates]
 
+- FIXED (round 2, reported by proteus-converter) — embedded TrueType subsets carried the full name/cmap/post tables
+  (post alone was ~450 KB for CJK fonts) and full-length loca/hmtx. `font/truetype/subset.go` now keeps only
+  head, OS/2, cvt, fpgm, prep, hhea, maxp, hmtx, post (format 3.0), loca, glyf and cuts maxp/hhea/hmtx/loca to the
+  highest used GID (+1), so /CIDToGIDMap /Identity stays valid. DejaVuSans: 760 KB -> 6.7 KB for a short string.
+  Note: `truetype.Parse` cannot re-read a subset (it requires cmap); test it through poppler instead.
+  [tests/doc/font_subset_test.go]
+
 ## Still open
 - AES-256 passwords are not SASLprep-normalised (ASCII and NFC input fine).
 - Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
