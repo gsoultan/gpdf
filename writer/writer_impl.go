@@ -155,7 +155,7 @@ func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
 	known := knownNumbers(objs)
 	offsets := make(map[int]int64, len(objs))
 	gens := make(map[int]int, len(objs))
-	body := bytes.NewBufferString(headerPDF20)
+	body := bytes.NewBufferString(headerFor(doc))
 	for _, o := range objs {
 		offsets[o.ref.ObjectNumber] = int64(body.Len())
 		gens[o.ref.ObjectNumber] = o.ref.Generation

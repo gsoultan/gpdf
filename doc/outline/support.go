@@ -132,6 +132,7 @@ func (s *Support) BuildLinkAnnotations(objs map[int]model.Object, pageIndex int,
 			model.Name("Rect"):    rect,
 			// Without /Border the default is [0 0 1]: viewers draw a 1pt box around links.
 			model.Name("Border"): model.Array{model.Integer(0), model.Integer(0), model.Integer(0)},
+			model.Name("F"):      model.Integer(4), // Print, which PDF/A requires
 		}
 
 		switch {

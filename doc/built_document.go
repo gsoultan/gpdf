@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -14,7 +15,16 @@ type builtDocument struct {
 	trailer model.Trailer
 	objects map[int]model.Object
 	size    int
+	// version, when set, is the PDF header version the writer uses instead of 2.0.
+	version string
+	pdfa    bool
 }
+
+// ErrPDFAEncryption is returned when a PDF/A document is saved with a password.
+var ErrPDFAEncryption = errors.New("pdf/a documents cannot be encrypted")
+
+// PDFVersion returns the header version the writer should use ("" for its default).
+func (d *builtDocument) PDFVersion() string { return d.version }
 
 func (d *builtDocument) Catalog() (*model.Catalog, error) {
 	root := d.trailer.Root()
@@ -85,6 +95,9 @@ func (d *builtDocument) Save(w io.Writer) error {
 }
 
 func (d *builtDocument) SaveWithPassword(w io.Writer, userPassword, ownerPassword string) error {
+	if d.pdfa {
+		return ErrPDFAEncryption
+	}
 	pw := writer.NewPDFWriter()
 	return pw.WriteWithPassword(w, d, userPassword, ownerPassword)
 }
@@ -92,6 +105,9 @@ func (d *builtDocument) SaveWithPassword(w io.Writer, userPassword, ownerPasswor
 // SaveWithAES256Password writes the document encrypted with AES-256. This is
 // a stronger alternative to SaveWithPassword while keeping a similar API.
 func (d *builtDocument) SaveWithAES256Password(w io.Writer, userPassword, ownerPassword string) error {
+	if d.pdfa {
+		return ErrPDFAEncryption
+	}
 	pw := writer.NewPDFWriter()
 	return pw.WriteWithAES256Password(w, d, userPassword, ownerPassword)
 }

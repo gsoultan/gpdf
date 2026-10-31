@@ -29,6 +29,8 @@ type DocumentBuilder struct {
 
 	noCompressContent bool
 	paintOrder        PaintOrder
+	decorators        []PageDecorator
+	pdfa              PDFALevel
 	iccProfile        *ICCProfile
 
 	err error

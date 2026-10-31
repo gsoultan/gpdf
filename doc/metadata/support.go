@@ -1,6 +1,10 @@
 package metadata
 
-import "github.com/gsoultan/gpdf/model"
+import (
+	"time"
+
+	"github.com/gsoultan/gpdf/model"
+)
 
 // Support owns document metadata fields for a document builder.
 type Support struct {
@@ -12,6 +16,8 @@ type Support struct {
 	Producer    string
 	MetadataXMP []byte
 	Lang        string
+	// CreationDate, when set, is written as /CreationDate and /ModDate.
+	CreationDate time.Time
 }
 
 // BuildInfoDict builds the PDF /Info dictionary from the stored metadata fields.
@@ -34,6 +40,11 @@ func (s *Support) BuildInfoDict() model.Dict {
 	}
 	if s.Producer != "" {
 		info[model.Name("Producer")] = model.String(s.Producer)
+	}
+	if !s.CreationDate.IsZero() {
+		d := model.String(PDFDate(s.CreationDate))
+		info[model.Name("CreationDate")] = d
+		info[model.Name("ModDate")] = d
 	}
 	return info
 }

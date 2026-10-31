@@ -68,6 +68,8 @@ func buildEmbeddedFontObjects(
 	*nextNum++
 	tounicodeNum := *nextNum
 	*nextNum++
+	cidSetNum := *nextNum
+	*nextNum++
 
 	// Subset font program.
 	subsetBytes, err := ef.Subset(usage.usedGIDs)
@@ -112,6 +114,13 @@ func buildEmbeddedFontObjects(
 	if subsetBytes != nil {
 		descriptorDict[model.Name("FontFile2")] = model.Ref{ObjectNumber: fontFileNum}
 	}
+	// CIDSet lists the glyphs in the subset (PDF/A-1 and -2 ask for it).
+	cidSet := buildCIDSet(usage.usedGIDs)
+	objs[cidSetNum] = &model.Stream{
+		Dict:    model.Dict{model.Name("Length"): model.Integer(int64(len(cidSet))), model.Name("Filter"): model.Name("FlateDecode")},
+		Content: cidSet,
+	}
+	descriptorDict[model.Name("CIDSet")] = model.Ref{ObjectNumber: cidSetNum}
 	objs[descriptorNum] = descriptorDict
 
 	// CIDFont (DescendantFont).
@@ -237,4 +246,19 @@ func randomSubsetTag() string {
 		tag[i] = 'A' + (b[i/2]>>(4*(1-uint(i%2))))&0x0F%26
 	}
 	return string(tag)
+}
+
+// buildCIDSet returns a bitmap with one bit per CID, set for the CIDs the subset
+// contains (CID 0, .notdef, is always present).
+func buildCIDSet(used map[uint16]bool) []byte {
+	maxGID := uint16(0)
+	for g := range used {
+		maxGID = max(maxGID, g)
+	}
+	bits := make([]byte, int(maxGID)/8+1)
+	bits[0] |= 0x80
+	for g := range used {
+		bits[g/8] |= 0x80 >> (g % 8)
+	}
+	return bits
 }
