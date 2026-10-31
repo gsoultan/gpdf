@@ -11,6 +11,7 @@ import (
 	"github.com/gsoultan/gpdf/model"
 	"github.com/gsoultan/gpdf/security"
 	"github.com/gsoultan/gpdf/stream"
+	"github.com/gsoultan/gpdf/syntax"
 	"github.com/gsoultan/gpdf/syntax/impl"
 	"github.com/gsoultan/gpdf/xref"
 )
@@ -42,13 +43,61 @@ func (c *documentCore) ObjectNumbers() []int              { return c.xref.Object
 func (c *documentCore) Version() PDFVersion               { return c.version }
 func (c *documentCore) Linearization() *LinearizationInfo { return c.linearization }
 
+// newParser returns a parser over the file that resolves indirect stream /Length values.
+func (c *documentCore) newParser() syntax.Parser {
+	return impl.NewParserWithLengthResolver(c.r, c.size, c.resolveLength)
+}
+
+// resolveLength resolves an indirect /Length to an integer. It parses the target object
+// without a length resolver of its own, so a self-referencing /Length cannot recurse.
+func (c *documentCore) resolveLength(ref model.Ref) (int64, bool) {
+	e, ok := c.xref.Get(ref.ObjectNumber)
+	if !ok || !e.InUse {
+		return 0, false
+	}
+	var obj model.Object
+	if e.Compressed {
+		// Only use object streams that are already decoded: decoding one here could need
+		// this very length again (hostile files), and the endstream scan recovers anyway.
+		c.mu.Lock()
+		cached, ok := c.objects[model.Ref{ObjectNumber: e.StreamObjectNumber}]
+		c.mu.Unlock()
+		objStm, isStream := cached.(*model.Stream)
+		if !ok || !isStream {
+			return 0, false
+		}
+		o, err := c.extractFromObjectStream(objStm, e.StreamObjectNumber, e.IndexInStream)
+		if err != nil {
+			return 0, false
+		}
+		obj = o
+	} else {
+		p := impl.NewParser(c.r, c.size)
+		if err := p.SetPosition(e.Offset); err != nil {
+			return 0, false
+		}
+		indirect, _, err := p.ParseObject()
+		if err != nil || indirect == nil || indirect.ObjectNumber != ref.ObjectNumber {
+			return 0, false
+		}
+		obj = indirect.Value
+	}
+	switch v := obj.(type) {
+	case model.Integer:
+		return int64(v), v >= 0
+	case model.Real:
+		return int64(v), v >= 0
+	}
+	return 0, false
+}
+
 // resolveRaw parses and returns the object at ref without decryption or caching (used for Encrypt dict).
 func (c *documentCore) resolveRaw(ref model.Ref) (model.Object, error) {
 	e, ok := c.xref.Get(ref.ObjectNumber)
 	if !ok || !e.InUse {
 		return nil, fmt.Errorf("object %d %d R not in xref", ref.ObjectNumber, ref.Generation)
 	}
-	p := impl.NewParser(c.r, c.size)
+	p := c.newParser()
 	if err := p.SetPosition(e.Offset); err != nil {
 		return nil, err
 	}
@@ -124,7 +173,7 @@ func (c *documentCore) enforceObjectCacheLimitLocked() {
 }
 
 func (c *documentCore) resolveIndirect(ref model.Ref, e xref.Entry) (model.Object, error) {
-	p := impl.NewParser(c.r, c.size)
+	p := c.newParser()
 	if err := p.SetPosition(e.Offset); err != nil {
 		return nil, err
 	}
@@ -180,7 +229,7 @@ func (c *documentCore) parseObjectStream(streamObjNum int, streamRef model.Ref) 
 	if !ok || !e.InUse || e.Compressed {
 		return nil, fmt.Errorf("object stream %d not found or is itself compressed", streamObjNum)
 	}
-	p := impl.NewParser(c.r, c.size)
+	p := c.newParser()
 	if err := p.SetPosition(e.Offset); err != nil {
 		return nil, err
 	}
@@ -249,10 +298,20 @@ func (c *documentCore) extractFromObjectStream(objStm *model.Stream, streamObjNu
 	return inline, nil
 }
 
+// decryptObject decrypts the strings and streams of an indirect object. The Encrypt
+// dictionary itself is never encrypted (ISO 32000-1 §7.6.1).
 func (c *documentCore) decryptObject(obj model.Object, ref model.Ref) (model.Object, error) {
+	decrypt := c.decryptor != nil
+	if enc := c.trailer.Encrypt(); enc != nil && enc.ObjectNumber == ref.ObjectNumber {
+		decrypt = false
+	}
+	return c.transformObject(obj, ref, decrypt)
+}
+
+func (c *documentCore) transformObject(obj model.Object, ref model.Ref, decrypt bool) (model.Object, error) {
 	switch v := obj.(type) {
 	case model.String:
-		if c.decryptor == nil {
+		if !decrypt {
 			return v, nil
 		}
 		plain, err := c.decryptor.DecryptString(ref, []byte(v))
@@ -260,10 +319,19 @@ func (c *documentCore) decryptObject(obj model.Object, ref model.Ref) (model.Obj
 			return nil, err
 		}
 		return model.String(plain), nil
+	case model.HexString:
+		if !decrypt {
+			return v, nil
+		}
+		plain, err := c.decryptor.DecryptString(ref, []byte(v))
+		if err != nil {
+			return nil, err
+		}
+		return model.HexString(plain), nil
 	case model.Array:
 		out := make(model.Array, len(v))
 		for i, item := range v {
-			decrypted, err := c.decryptObject(item, ref)
+			decrypted, err := c.transformObject(item, ref, decrypt)
 			if err != nil {
 				return nil, err
 			}
@@ -273,7 +341,7 @@ func (c *documentCore) decryptObject(obj model.Object, ref model.Ref) (model.Obj
 	case model.Dict:
 		out := make(model.Dict, len(v))
 		for key, item := range v {
-			decrypted, err := c.decryptObject(item, ref)
+			decrypted, err := c.transformObject(item, ref, decrypt)
 			if err != nil {
 				return nil, err
 			}
@@ -281,17 +349,17 @@ func (c *documentCore) decryptObject(obj model.Object, ref model.Ref) (model.Obj
 		}
 		return out, nil
 	case *model.Stream:
-		return c.decryptStream(v, ref)
+		return c.decryptStream(v, ref, decrypt)
 	default:
 		return obj, nil
 	}
 }
 
-func (c *documentCore) decryptStream(v *model.Stream, ref model.Ref) (model.Object, error) {
+func (c *documentCore) decryptStream(v *model.Stream, ref model.Ref, decrypt bool) (model.Object, error) {
 	if v == nil {
 		return v, nil
 	}
-	dictObj, err := c.decryptObject(v.Dict, ref)
+	dictObj, err := c.transformObject(v.Dict, ref, decrypt)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +371,7 @@ func (c *documentCore) decryptStream(v *model.Stream, ref model.Ref) (model.Obje
 		Dict:    dict,
 		Content: bytes.Clone(v.Content),
 	}
-	decoded, err := c.decodeStream(streamCopy, ref)
+	decoded, err := c.decodeStreamWith(streamCopy, ref, decrypt)
 	if err != nil {
 		return nil, err
 	}
@@ -312,13 +380,84 @@ func (c *documentCore) decryptStream(v *model.Stream, ref model.Ref) (model.Obje
 }
 
 func (c *documentCore) decodeStream(s *model.Stream, ref model.Ref) ([]byte, error) {
+	return c.decodeStreamWith(s, ref, c.decryptor != nil)
+}
+
+// decodeStreamWith decrypts (when decrypt is set and the stream is encrypted at all) and
+// then decodes the stream's filter chain.
+func (c *documentCore) decodeStreamWith(s *model.Stream, ref model.Ref, decrypt bool) ([]byte, error) {
 	data := s.Content
-	if c.decryptor != nil {
-		dec, err := c.decryptor.DecryptStream(ref, data)
+	if decrypt && c.decryptor != nil {
+		dec, err := c.decryptStreamContent(s, ref)
 		if err != nil {
 			return nil, err
 		}
 		data = dec
 	}
-	return applyFiltersWithLimits(data, s.Dict[model.Name("Filter")], c.filters, c.maxStreamBytes, c.maxFilterChain)
+	return applyFilterChain(data, s.Dict[model.Name("Filter")], s.Dict[model.Name("DecodeParms")], c.filters, c.maxStreamBytes, c.maxFilterChain)
+}
+
+// decryptStreamContent picks the right crypt filter for a stream: cross-reference streams
+// are never encrypted, an unencrypted XMP metadata stream (/EncryptMetadata false) is left
+// alone, and a stream whose filter chain starts with /Crypt uses the crypt filter it names.
+func (c *documentCore) decryptStreamContent(s *model.Stream, ref model.Ref) ([]byte, error) {
+	typ, _ := s.Dict[model.Name("Type")].(model.Name)
+	if typ == "XRef" {
+		return s.Content, nil
+	}
+	if typ == "Metadata" {
+		if me, ok := c.decryptor.(security.MetadataEncryption); ok && !me.EncryptMetadata() {
+			return s.Content, nil
+		}
+	}
+	if name, ok := cryptFilterName(s.Dict); ok {
+		if name == "Identity" {
+			return s.Content, nil
+		}
+		cf, ok := c.decryptor.(security.CryptFilterDecryptor)
+		if !ok {
+			return nil, fmt.Errorf("%w: crypt filter %s", ErrUnsupportedFilter, name)
+		}
+		return cf.DecryptStreamWithFilter(name, ref, s.Content)
+	}
+	return c.decryptor.DecryptStream(ref, s.Content)
+}
+
+// cryptFilterName returns the crypt filter named by a stream whose /Filter starts with
+// /Crypt (default Identity), and whether the stream has such a filter.
+func cryptFilterName(dict model.Dict) (string, bool) {
+	var first model.Name
+	var parms model.Dict
+	switch f := dict[model.Name("Filter")].(type) {
+	case model.Name:
+		first = f
+		parms, _ = dict[model.Name("DecodeParms")].(model.Dict)
+	case model.Array:
+		if len(f) > 0 {
+			first, _ = f[0].(model.Name)
+		}
+		switch p := dict[model.Name("DecodeParms")].(type) {
+		case model.Array:
+			if len(p) > 0 {
+				parms, _ = p[0].(model.Dict)
+			}
+		case model.Dict:
+			parms = p
+		}
+	}
+	if first != "Crypt" {
+		return "", false
+	}
+	if n, ok := parms[model.Name("Name")].(model.Name); ok {
+		return string(n), true
+	}
+	return "Identity", true
+}
+
+// Generation returns the generation number of object num from the cross-reference table.
+func (c *documentCore) Generation(num int) int {
+	if e, ok := c.xref.Get(num); ok && !e.Compressed {
+		return e.Generation
+	}
+	return 0
 }
