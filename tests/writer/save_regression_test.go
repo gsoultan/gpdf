@@ -226,3 +226,25 @@ func TestSaveLinearizedIsWellFormed(t *testing.T) {
 		t.Fatalf("poppler text = %q", s)
 	}
 }
+
+// Regression: a stream with a filter gPDF has no codec for made Resolve, and so Save,
+// fail. The reader now keeps such a stream encoded and the writer copies it unchanged.
+func TestUnknownFilterIsPassedThrough(t *testing.T) {
+	b := pdftest.New("1.4").OnePage()
+	b.Stream(10, 0, "/Filter /MadeUpDecode /DecodeParms << /K 1 >>", []byte("opaque bytes"))
+	pdf := b.XRefTable("/Root 1 0 R")
+	d := open(t, pdf, "")
+	obj, err := d.Resolve(model.Ref{ObjectNumber: 10})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	s := obj.(*model.Stream)
+	if string(s.Content) != "opaque bytes" || s.Dict[model.Name("Filter")] != model.Name("MadeUpDecode") {
+		t.Fatalf("stream = %v %q", s.Dict, s.Content)
+	}
+	out := save(t, d)
+	if !bytes.Contains(out, []byte("/Filter /MadeUpDecode")) || !bytes.Contains(out, []byte("/DecodeParms <<\n/K 1\n>>")) ||
+		!bytes.Contains(out, []byte("stream\nopaque bytes\nendstream")) {
+		t.Fatalf("saved file does not carry the stream through:\n%s", out)
+	}
+}

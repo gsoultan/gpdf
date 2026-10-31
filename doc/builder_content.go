@@ -485,7 +485,38 @@ func (b *DocumentBuilder) jpegXObjectStream(im imageRun) *model.Stream {
 		model.Name("Filter"):           model.Name("DCTDecode"),
 		model.Name("Length"):           model.Integer(int64(len(im.Raw))),
 	}
+	if im.ColorSpace == "DeviceCMYK" && jpegHasAdobeMarker(im.Raw) {
+		// Adobe (APP14) CMYK JPEGs store inverted samples; without this /Decode the
+		// image renders as a negative.
+		dict[model.Name("Decode")] = model.Array{
+			model.Integer(1), model.Integer(0), model.Integer(1), model.Integer(0),
+			model.Integer(1), model.Integer(0), model.Integer(1), model.Integer(0),
+		}
+	}
 	return &model.Stream{Dict: dict, Content: im.Raw}
+}
+
+// jpegHasAdobeMarker reports whether the JPEG carries an Adobe APP14 segment.
+func jpegHasAdobeMarker(data []byte) bool {
+	for i := 2; i+4 <= len(data); {
+		if data[i] != 0xFF {
+			return false
+		}
+		marker := data[i+1]
+		if marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD7) || marker == 0x01 || marker == 0xFF {
+			i += 2
+			continue
+		}
+		if marker == 0xDA || marker == 0xD9 {
+			return false // scan data or end: no more headers
+		}
+		segLen := int(data[i+2])<<8 | int(data[i+3])
+		if marker == 0xEE && i+4+5 <= len(data) && string(data[i+4:i+9]) == "Adobe" {
+			return true
+		}
+		i += 2 + segLen
+	}
+	return false
 }
 
 func winAnsiEncode(s string) string {

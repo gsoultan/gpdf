@@ -526,7 +526,8 @@ func filterNames(obj model.Object) ([]string, bool) {
 // since a reader decodes them first to last. Flate and LZW are re-encoded without a predictor,
 // so their /DecodeParms entries are dropped; other filters keep theirs. If any filter cannot
 // encode, the content is written unfiltered and /Filter and /DecodeParms are removed, so the
-// dictionary never claims an encoding the bytes do not have.
+// dictionary never claims an encoding the bytes do not have. A filter chain with a name the
+// registry does not know is passed through untouched (see reader: such streams stay encoded).
 func (pw *PDFWriter) encodeStream(v *model.Stream) (model.Dict, []byte) {
 	dict := maps.Clone(v.Dict)
 	if dict == nil {
@@ -561,7 +562,9 @@ func (pw *PDFWriter) encodeStream(v *model.Stream) (model.Dict, []byte) {
 	for i := len(names) - 1; i >= 0; i-- {
 		f := pw.filters.Get(names[i])
 		if f == nil {
-			return raw()
+			// No codec for this filter: the reader left such a stream encoded, so the
+			// bytes and the dictionary are copied as they are.
+			return maps.Clone(v.Dict), v.Content
 		}
 		var buf bytes.Buffer
 		if err := f.Encode(&buf, bytes.NewReader(data), names[i]); err != nil {

@@ -248,3 +248,27 @@ func TestDrawImageWithDecodesPNGFile(t *testing.T) {
 		t.Fatal("no /SMask")
 	}
 }
+
+// Adobe (APP14) CMYK JPEGs store inverted samples and need /Decode [1 0 1 0 1 0 1 0];
+// other JPEGs must not get it.
+func TestAdobeCMYKJPEGGetsInvertedDecode(t *testing.T) {
+	adobe := append([]byte{0xFF, 0xD8, 0xFF, 0xEE, 0, 14}, "Adobe\x00\x64\x00\x00\x00\x00\x02"...)
+	adobe = append(adobe, 0xFF, 0xDA, 0, 2)
+	plain := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xDA, 0, 2}
+	for _, tc := range []struct {
+		name string
+		data []byte
+		want bool
+	}{{"adobe", adobe, true}, {"plain", plain, false}} {
+		b := doc.New().PageSize(50, 50).AddPage()
+		b.DrawJPEG(0, 0, 10, 10, tc.data, 1, 1, "DeviceCMYK")
+		d, err := b.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, got := imageXObject(t, d).Dict[model.Name("Decode")]
+		if got != tc.want {
+			t.Errorf("%s: /Decode present = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

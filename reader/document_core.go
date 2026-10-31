@@ -2,6 +2,7 @@ package reader
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -389,7 +390,12 @@ func (c *documentCore) decryptStream(v *model.Stream, ref model.Ref, decrypt boo
 	}
 	decoded, err := c.decodeStreamWith(streamCopy, ref, decrypt)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, ErrUnsupportedFilter) || decoded == nil {
+			return nil, err
+		}
+		// A filter this reader has no codec for (JBIG2, JPX and the like are
+		// pass-through, so this is a custom or misspelt name): keep the stream
+		// as it is, with its /Filter, so Save can copy it unchanged.
 	}
 	streamCopy.Content = decoded
 	return streamCopy, nil
@@ -410,7 +416,12 @@ func (c *documentCore) decodeStreamWith(s *model.Stream, ref model.Ref, decrypt 
 		}
 		data = dec
 	}
-	return applyFilterChain(data, s.Dict[model.Name("Filter")], s.Dict[model.Name("DecodeParms")], c.filters, c.maxStreamBytes, c.maxFilterChain)
+	decoded, err := applyFilterChain(data, s.Dict[model.Name("Filter")], s.Dict[model.Name("DecodeParms")], c.filters, c.maxStreamBytes, c.maxFilterChain)
+	if errors.Is(err, ErrUnsupportedFilter) {
+		// Hand back the still-encoded bytes with the error so the caller can keep them.
+		return data, err
+	}
+	return decoded, err
 }
 
 // decryptStreamContent picks the right crypt filter for a stream: cross-reference streams
