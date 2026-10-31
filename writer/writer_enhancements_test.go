@@ -2,6 +2,7 @@ package writer
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"testing"
@@ -107,14 +108,22 @@ func writeEncryptedWithSeed(t *testing.T, doc Document, seed []byte) []byte {
 
 func extractTrailerIDString(t *testing.T, output []byte) string {
 	t.Helper()
-	start := bytes.Index(output, []byte("/ID [("))
+	start := bytes.Index(output, []byte("/ID [<"))
 	if start < 0 {
 		t.Fatalf("/ID marker not found in output")
 	}
-	start += len("/ID [(")
-	end := bytes.Index(output[start:], []byte(")]"))
+	start += len("/ID [<")
+	end := bytes.Index(output[start:], []byte(">"))
 	if end < 0 {
 		t.Fatalf("/ID closing marker not found in output")
 	}
-	return string(output[start : start+end])
+	id, err := hex.DecodeString(string(output[start : start+end]))
+	if err != nil {
+		t.Fatalf("/ID is not hex: %v", err)
+	}
+	// The ID array must have two elements (ISO 32000-1 §14.4).
+	if !bytes.Contains(output, []byte("/ID [<"+string(output[start:start+end])+"> <")) {
+		t.Fatalf("/ID does not have two elements")
+	}
+	return string(id)
 }

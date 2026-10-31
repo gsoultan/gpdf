@@ -89,75 +89,23 @@ func splitOne(src Document, allPages []model.Page, indices []int) (Document, err
 	if len(indices) == 0 {
 		return nil, fmt.Errorf("split: no indices provided")
 	}
+	selected := make([]model.Page, 0, len(indices))
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(allPages) {
+			return nil, fmt.Errorf("split: page index %d out of range (0-%d)", idx, len(allPages)-1)
+		}
+		selected = append(selected, allPages[idx])
+	}
 
 	dst := &builtDocument{
 		objects: make(map[int]model.Object),
 		size:    1,
 	}
-
-	// 1. Copy Info from the source document (if available)
-	if info, err := src.Info(); err == nil && len(info) > 0 {
-		cloner := newObjectCloner(src, dst)
-		newInfo, err := cloner.clone(info)
-		if err == nil {
-			infoRef := dst.addObject(newInfo)
-			dst.trailer.Dict = model.Dict{
-				model.Name("Info"): infoRef,
-			}
-		}
-	} else {
-		dst.trailer.Dict = make(model.Dict)
+	copyInfo(src, dst)
+	refs, err := copyPages(src, dst, selected)
+	if err != nil {
+		return nil, fmt.Errorf("split: %w", err)
 	}
-
-	var clonedPageRefs []model.Ref
-	cloner := newObjectCloner(src, dst)
-
-	for _, idx := range indices {
-		if idx < 0 || idx >= len(allPages) {
-			return nil, fmt.Errorf("split: page index %d out of range (0-%d)", idx, len(allPages)-1)
-		}
-		p := allPages[idx]
-
-		clonedPageDict, err := cloner.clone(p.Dict)
-		if err != nil {
-			return nil, fmt.Errorf("split: failed to clone page %d: %w", idx, err)
-		}
-		pageDict := clonedPageDict.(model.Dict)
-
-		// Remove Parent reference, we'll set it later
-		delete(pageDict, model.Name("Parent"))
-
-		pageRef := dst.addObject(pageDict)
-		clonedPageRefs = append(clonedPageRefs, pageRef)
-	}
-
-	// 2. Create the new Pages tree
-	pagesDict := model.Dict{
-		model.Name("Type"):  model.Name("Pages"),
-		model.Name("Count"): model.Integer(int64(len(clonedPageRefs))),
-		model.Name("Kids"):  model.Array(make([]model.Object, len(clonedPageRefs))),
-	}
-	for i, ref := range clonedPageRefs {
-		pagesDict[model.Name("Kids")].(model.Array)[i] = ref
-	}
-	pagesRef := dst.addObject(pagesDict)
-
-	// Update Parent for each page
-	for _, ref := range clonedPageRefs {
-		pageDict := dst.objects[ref.ObjectNumber].(model.Dict)
-		pageDict[model.Name("Parent")] = pagesRef
-	}
-
-	// 3. Create the new Catalog
-	catalogDict := model.Dict{
-		model.Name("Type"):  model.Name("Catalog"),
-		model.Name("Pages"): pagesRef,
-	}
-	catalogRef := dst.addObject(catalogDict)
-
-	// 4. Finalize the trailer
-	dst.trailer.Dict[model.Name("Root")] = catalogRef
-	dst.trailer.Dict[model.Name("Size")] = model.Integer(int64(dst.size))
-
+	newPageTree(dst, refs)
 	return dst, nil
 }

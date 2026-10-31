@@ -15,7 +15,7 @@ func resolveFirstPageRef(doc Document) (*model.Ref, int, error) {
 	if root == nil {
 		return nil, 0, nil
 	}
-	cat, err := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0})
+	cat, err := doc.Resolve(*root)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -54,7 +54,7 @@ func resolveFirstPageRef(doc Document) (*model.Ref, int, error) {
 func (pw *PDFWriter) writeObjectSet(ws WriteSeeker, objNums []int, doc Document) (map[int]int64, error) {
 	offsets := make(map[int]int64)
 	for _, num := range objNums {
-		ref := model.Ref{ObjectNumber: num, Generation: 0}
+		ref := objectRef(doc, num)
 		obj, err := doc.Resolve(ref)
 		if err != nil {
 			return nil, err
@@ -64,7 +64,7 @@ func (pw *PDFWriter) writeObjectSet(ws WriteSeeker, objNums []int, doc Document)
 			return nil, err
 		}
 		offsets[num] = pos
-		if err := pw.writeIndirectObject(ws, num, 0, obj); err != nil {
+		if err := pw.writeIndirectObject(ws, ref, obj, nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -145,7 +145,7 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 			maxFirst = n
 		}
 	}
-	if err := pw.writeXRefTable(ws, doc, firstPageNums, offsetsFirst, maxFirst); err != nil {
+	if err := pw.writeXRefTable(ws, offsetsFirst, generations(doc, firstPageNums), maxFirst); err != nil {
 		return err
 	}
 	// First trailer with 10-digit /Prev placeholder so we can seek back and fix after we know mainXrefStart
@@ -178,12 +178,10 @@ func (pw *PDFWriter) WriteLinearized(ws WriteSeeker, doc Document) error {
 	for k, v := range offsetsRest {
 		allOffsets[k] = v
 	}
-	allNumsWith0 := append([]int{0}, allNums...)
-	sort.Ints(allNumsWith0)
-	if err := pw.writeXRefTable(ws, doc, allNumsWith0, allOffsets, maxNum); err != nil {
+	if err := pw.writeXRefTable(ws, allOffsets, generations(doc, allNums), maxNum); err != nil {
 		return err
 	}
-	trailerMain := copyTrailerWithSize(doc.Trailer().Dict, maxNum+1)
+	trailerMain := outputTrailer(doc.Trailer().Dict, maxNum+1)
 	if _, err := io.WriteString(ws, "trailer\n"); err != nil {
 		return err
 	}
@@ -223,7 +221,7 @@ func (pw *PDFWriter) firstPageObjectSet(doc Document) (map[int]bool, error) {
 	}
 	seen := make(map[int]bool)
 	pw.collectRefs(doc, root.ObjectNumber, seen)
-	cat, err := doc.Resolve(model.Ref{ObjectNumber: root.ObjectNumber, Generation: 0})
+	cat, err := doc.Resolve(*root)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +259,7 @@ func (pw *PDFWriter) collectRefs(doc Document, objNum int, seen map[int]bool) {
 		return
 	}
 	seen[objNum] = true
-	obj, err := doc.Resolve(model.Ref{ObjectNumber: objNum, Generation: 0})
+	obj, err := doc.Resolve(objectRef(doc, objNum))
 	if err != nil || obj == nil {
 		return
 	}
@@ -287,11 +285,10 @@ func (pw *PDFWriter) collectRefs(doc Document, objNum int, seen map[int]bool) {
 	}
 }
 
-func copyTrailerWithSize(d model.Dict, size int) model.Dict {
-	out := make(model.Dict, len(d)+1)
-	for k, v := range d {
-		out[k] = v
+func generations(doc Document, nums []int) map[int]int {
+	gens := make(map[int]int, len(nums))
+	for _, n := range nums {
+		gens[n] = objectRef(doc, n).Generation
 	}
-	out[model.Name("Size")] = model.Integer(int64(size))
-	return out
+	return gens
 }

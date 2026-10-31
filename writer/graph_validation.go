@@ -37,11 +37,15 @@ func validateDocumentGraphWithOptions(doc Document, allowExternalRefs bool) erro
 		return err
 	}
 
+	skip := excludedObjectNumbers(doc)
 	for _, num := range objNums {
-		ref := model.Ref{ObjectNumber: num, Generation: 0}
+		if skip[num] {
+			continue
+		}
+		ref := objectRef(doc, num)
 		obj, err := doc.Resolve(ref)
 		if err != nil {
-			return fmt.Errorf("%w: failed to resolve %d 0 R: %v", ErrInvalidDocumentGraph, num, err)
+			return fmt.Errorf("%w: failed to resolve %d %d R: %v", ErrInvalidDocumentGraph, num, ref.Generation, err)
 		}
 		if err := validateObjectRefs(obj, known, 0, allowExternalRefs); err != nil {
 			return err

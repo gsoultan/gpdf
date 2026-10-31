@@ -49,21 +49,33 @@ func (d *builtDocument) Pages() ([]model.Page, error) {
 	if !ok {
 		return nil, fmt.Errorf("pages: object %d is not a dict", pagesRef.ObjectNumber)
 	}
-	kids, ok := pagesDict[model.Name("Kids")].(model.Array)
-	if !ok {
+	if _, ok := pagesDict[model.Name("Kids")].(model.Array); !ok {
 		return nil, fmt.Errorf("pages: missing /Kids in Pages dict")
 	}
 	var out []model.Page
-	for _, k := range kids {
-		ref, ok := k.(model.Ref)
+	visited := make(map[int]bool)
+	var walk func(ref model.Ref)
+	walk = func(ref model.Ref) {
+		if visited[ref.ObjectNumber] {
+			return
+		}
+		visited[ref.ObjectNumber] = true
+		dict, ok := d.objects[ref.ObjectNumber].(model.Dict)
 		if !ok {
-			continue
+			return
 		}
-		pageObj := d.objects[ref.ObjectNumber]
-		if dict, ok := pageObj.(model.Dict); ok {
-			out = append(out, model.Page{Dict: dict})
+		if t, _ := dict[model.Name("Type")].(model.Name); t == "Pages" {
+			kids, _ := dict[model.Name("Kids")].(model.Array)
+			for _, k := range kids {
+				if kr, ok := k.(model.Ref); ok {
+					walk(kr)
+				}
+			}
+			return
 		}
+		out = append(out, model.Page{Dict: dict, Ref: ref})
 	}
+	walk(pagesRef)
 	return out, nil
 }
 

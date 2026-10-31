@@ -43,6 +43,11 @@ func (c *objectCloner) clone(obj model.Object) (model.Object, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Pages and page-tree nodes are only copied when selected (see copyPages);
+		// following one here would drag in the rest of the source document.
+		if isPageTreeNode(resolved) {
+			return model.Null{}, nil
+		}
 
 		// Reserve a new number in the destination
 		newNum := c.dst.size
@@ -96,4 +101,13 @@ func (c *objectCloner) clone(obj model.Object) (model.Object, error) {
 		// Primitive types (Boolean, Integer, Real, String, Name, HexString) are copied by value
 		return v, nil
 	}
+}
+
+func isPageTreeNode(obj model.Object) bool {
+	d, ok := obj.(model.Dict)
+	if !ok {
+		return false
+	}
+	t, _ := d[model.Name("Type")].(model.Name)
+	return t == "Page" || t == "Pages"
 }

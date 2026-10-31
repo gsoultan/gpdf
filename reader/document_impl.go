@@ -246,15 +246,26 @@ func (d *pdfDocument) Pages() ([]model.Page, error) {
 	if err != nil {
 		return nil, err
 	}
-	return d.collectPages(obj, nil)
+	return d.collectPages(obj, pagesRef, nil, make(map[int]bool))
 }
 
 var inheritableKeys = []model.Name{"MediaBox", "CropBox", "Resources", "Rotate"}
 
-func (d *pdfDocument) collectPages(obj model.Object, inherited model.Dict) ([]model.Page, error) {
+// maxPageTreeDepth bounds page tree recursion on hostile files.
+const maxPageTreeDepth = 256
+
+func (d *pdfDocument) collectPages(obj model.Object, ref model.Ref, inherited model.Dict, visited map[int]bool) ([]model.Page, error) {
 	dict, ok := obj.(model.Dict)
 	if !ok {
 		return nil, nil
+	}
+	// A /Kids cycle (or a page listed twice) would otherwise recurse forever.
+	if visited[ref.ObjectNumber] {
+		return nil, nil
+	}
+	visited[ref.ObjectNumber] = true
+	if len(visited) > d.maxPageTreeNodes() {
+		return nil, fmt.Errorf("page tree has more than %d nodes", d.maxPageTreeNodes())
 	}
 
 	merged := mergeInherited(inherited, dict)
@@ -268,7 +279,7 @@ func (d *pdfDocument) collectPages(obj model.Object, inherited model.Dict) ([]mo
 				}
 			}
 		}
-		return []model.Page{{Dict: dict}}, nil
+		return []model.Page{{Dict: dict, Ref: ref}}, nil
 	}
 
 	kidsObj, ok := dict[model.Name("Kids")].(model.Array)
@@ -285,13 +296,20 @@ func (d *pdfDocument) collectPages(obj model.Object, inherited model.Dict) ([]mo
 		if err != nil {
 			return nil, err
 		}
-		sub, err := d.collectPages(child, merged)
+		sub, err := d.collectPages(child, ref, merged, visited)
 		if err != nil {
 			return nil, err
 		}
 		pages = append(pages, sub...)
 	}
 	return pages, nil
+}
+
+func (d *pdfDocument) maxPageTreeNodes() int {
+	if n := d.xref.Size(); n > 0 {
+		return n + 1
+	}
+	return 1 << 20
 }
 
 func mergeInherited(parent model.Dict, current model.Dict) model.Dict {

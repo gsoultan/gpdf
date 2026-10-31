@@ -21,7 +21,10 @@ func NewDocument(closer io.Closer, doc reader.Document) *Document {
 	d := &Document{
 		closer: closer,
 		doc:    doc,
-		w:      writer.NewPDFWriter(),
+		// Real-world files often reference deleted objects. The strict graph check is meant
+		// for documents built in memory; for files read from disk the writer writes such
+		// dangling references as null, as ISO 32000-1 §7.3.10 defines them.
+		w: writer.NewPDFWriterWithOptions(writer.WriterOptions{ValidateGraph: new(false)}),
 	}
 	runtime.SetFinalizer(d, (*Document).finalize)
 	return d
