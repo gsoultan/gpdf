@@ -90,10 +90,15 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
 
 ## Still open
 - SASLprep is applied without NFKC normalisation (no normaliser without golang.org/x/text).
-- PDF 2.0 features not implemented (reading passes them through untouched): /DSS and PAdES signatures (sign package is
-  a stub), /Collection (portable collections), unencrypted wrapper documents, geospatial (/Measure /GEO), 3D/RichMedia
-  annotations, tagged PDF 2.0 namespaces in the builder (reader exposes /Namespaces), page /PressTextureRendering? n/a.
-  Standard 14 fonts are still written unembedded (deprecated in 2.0; embed a TrueType font with RegisterFont instead).
+- DONE (roadmap phase 1, 2026-11-01): PAdES signatures (`sign` package: CAdES CMS, sign/verify/DSS, pdfsig says
+  "Signature is Valid"), portable collections (`doc/collection.go`, Attachment.CollectionItem -> /CI), 3D annotations
+  (`doc/annot3d.go`, U3D/PRC stream, poster appearance) and geospatial viewports (`doc/geo.go` /VP /Measure GEO,
+  `reader.ExtractGeoViewports` + `ToGeo`). Annotations from builder code go through `doc/annotations.go` annotBuilder.
+- PDF 2.0 features still not implemented: unencrypted wrapper documents, RichMedia, tagged PDF 2.0 namespaces in the
+  builder (reader exposes /Namespaces). Standard 14 fonts are still written unembedded (phase 2).
+- Signature limits: time-stamp tokens are embedded but their own signature is not checked; no OCSP/CRL fetching
+  (caller passes DER data to AddValidationData); incremental update writes an xref table even after an xref stream;
+  signing an encrypted file is refused.
 - Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
 - PDF/A: only level B of parts 2 and 3; checks cover fonts, CMYK and encryption, not everything veraPDF checks
   (no veraPDF available here). Not done: PDF/A-1, level A/U, embedded-file (AF) support for PDF/A-3.

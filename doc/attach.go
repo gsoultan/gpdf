@@ -37,6 +37,9 @@ type Attachment struct {
 	// Modified, when set, is written as the file's modification date.
 	Modified time.Time
 	Data     []byte
+	// CollectionItem holds the values for the document's collection schema
+	// (see Collection): string, int, float64 or time-formatted string per field key.
+	CollectionItem map[string]any
 
 	pageIndex int // -1 for a document-level attachment
 }
@@ -119,6 +122,9 @@ func (b *DocumentBuilder) buildAttachments(objs map[int]model.Object, catalogDic
 		}
 		if a.Description != "" {
 			spec[model.Name("Desc")] = model.String(a.Description)
+		}
+		if ci := collectionItem(a.CollectionItem, pdf20); ci != nil {
+			spec[model.Name("CI")] = ci
 		}
 		objs[specNum] = spec
 		ref := model.Ref{ObjectNumber: specNum}

@@ -15,6 +15,12 @@ A library for reading, searching, and modifying PDF documents.
   document parts (`DocumentPart`), black point compensation, and form fields with appearance streams.
   Reading accepts every 1.x and 2.0 feature the writer produces (text strings, dates, catalog `/Version`,
   attachments, `/Extensions`, `/DPartRoot`).
+- **Digital signatures**: `sign.Sign` appends a PAdES (ETSI.CAdES.detached) or PKCS#7 signature as an incremental
+  update, with optional certification (DocMDP), visible appearance and RFC 3161 time-stamp; `sign.Verify` checks the
+  byte range, the CMS signature and the certificate chain; `sign.AddValidationData` stores certificates, CRLs and OCSP
+  responses in /DSS (PAdES-B-LT).
+- **Portable collections, 3D and geospatial**: `Collection` with a schema over the attachments, `Page.Add3D` (U3D/PRC
+  with poster), `Page.AddGeoViewport` with `reader.ExtractGeoViewports` for coordinates.
 - **PDF/A**: `PDFA(doc.PDFA2B | PDFA3B | PDFA4 | PDFA4E | PDFA4F)` with sRGB output intent and XMP identification.
 
 ## Usage

@@ -34,6 +34,8 @@ type DocumentBuilder struct {
 	iccProfile        *ICCProfile
 	attachments       []Attachment
 	pageIntents       []pageOutputIntent
+	annots            map[int][]annotBuilder
+	collection        *CollectionOptions
 	parts             []documentPart
 	partsNextNum      int
 

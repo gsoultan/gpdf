@@ -109,6 +109,7 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	nextNum = b.buildCatalogExtras(objs, catalogDict, pageNums, nextNum)
 	nextNum = b.buildAttachments(objs, catalogDict, pageNums, nextNum)
 	nextNum = b.buildPageOutputIntents(objs, pageNums, nextNum)
+	nextNum = b.buildCollection(objs, catalogDict, nextNum)
 	if err := b.buildDocumentParts(objs, catalogDict, pageNums, nextNum); err != nil {
 		return nil, err
 	}
@@ -261,6 +262,10 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 
 		annotRefs, updatedNext := b.outlines.BuildLinkAnnotations(objs, idx, pageNums, nextNum)
 		nextNum = updatedNext
+		for _, build := range b.annots[idx] {
+			ref := build(objs, model.Ref{ObjectNumber: pageNum}, func() int { n := nextNum; nextNum++; return n })
+			annotRefs = append(annotRefs, ref)
+		}
 		if len(annotRefs) > 0 {
 			pageDict[model.Name("Annots")] = annotRefs
 		}

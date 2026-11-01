@@ -16,7 +16,7 @@ Layering (low → high). Interfaces sit at the package root; concrete code in `i
 | `font`, `font/truetype`, `font/system` | Standard-14 metrics, TrueType parsing/subsetting/GSUB/ToUnicode, system font lookup. |
 | `xobject` | Image/form XObject helpers. |
 | `doc` | Public facade. `Document` = CatalogReader + ContentReader + ContentSearcher + ImageReader + LayoutReader + Saver. `DocumentBuilder` (+ `builder/graphics|imgdraw|text`, `table`, `form`, `layer`, `tagged`, `outline`, `metadata`, `style`, `pagesize`), `builtDocument`, `merge.go`, `split.go`, `cloner.go` (ref-remapping deep copy). |
-| `sign` | `Sign`/`SignFile` — not implemented, return `sign.ErrNotImplemented`. |
+| `sign` | PAdES/CMS signatures: `CMSSigner` (`cms.go`, encoding/asn1 SignedData with content-type, message-digest, ESS signing-certificate-v2, optional RFC 3161 token), `Sign` (`sign.go`: incremental update with Sig dict + merged Sig field/widget, ByteRange and Contents patched in place, DocMDP certification, optional appearance), `Verify` (`verify.go`: byte-range digest, CMS signature, chain via x509, CoversWholeDocument), `AddValidationData` (`dss.go`: /DSS Certs/CRLs/OCSPs, ESIC extension). Encrypted inputs refused. |
 | `tests/` | Black-box tests (`tests/doc`, `tests/reader`, `tests/writer` incl. poppler interop when installed, `tests/merge_test.go`). |
 | `internal/pdftest` | Builder for hand-made test PDFs: raw objects, streams, xref table, predicted xref stream, object streams, hybrid files. |
 
