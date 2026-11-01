@@ -38,6 +38,13 @@ func loadFontFile(t *testing.T, paths ...string) *truetype.Font {
 		if err != nil {
 			continue
 		}
+		if strings.HasSuffix(p, ".ttc") {
+			fonts, err := truetype.ParseCollection(data)
+			if err != nil || len(fonts) == 0 {
+				t.Fatalf("parse %s: %v", p, err)
+			}
+			return fonts[0]
+		}
 		f, err := truetype.Parse(data)
 		if err != nil {
 			t.Fatalf("parse %s: %v", p, err)
