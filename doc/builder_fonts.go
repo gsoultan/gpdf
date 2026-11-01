@@ -11,8 +11,9 @@ import (
 // embeddedFontUsage tracks rune usage for one registered embeddable font.
 type embeddedFontUsage struct {
 	font      font.EmbeddableFont
-	usedRunes map[rune]uint16 // rune -> glyph ID
-	usedGIDs  map[uint16]bool // glyph IDs used
+	usedRunes map[rune]uint16   // rune -> glyph ID
+	usedGIDs  map[uint16]bool   // glyph IDs used
+	glyphText map[uint16]string // shaped glyph ID -> text it renders
 }
 
 func newEmbeddedFontUsage(f font.EmbeddableFont) *embeddedFontUsage {
@@ -20,7 +21,49 @@ func newEmbeddedFontUsage(f font.EmbeddableFont) *embeddedFontUsage {
 		font:      f,
 		usedRunes: make(map[rune]uint16),
 		usedGIDs:  make(map[uint16]bool),
+		glyphText: make(map[uint16]string),
 	}
+}
+
+// markGlyphs records shaped glyphs drawn with the font.
+func (u *embeddedFontUsage) markGlyphs(gs []font.Glyph) {
+	for _, g := range gs {
+		if g.ID == 0 {
+			continue
+		}
+		u.usedGIDs[g.ID] = true
+		if _, ok := u.glyphText[g.ID]; !ok {
+			u.glyphText[g.ID] = g.Text
+		}
+	}
+}
+
+// toUnicode builds the ToUnicode CMap, by glyph when shaped glyphs were used
+// (so that contextual forms and ligatures map back to their text).
+func (u *embeddedFontUsage) toUnicode() []byte {
+	ge, ok := unwrapFont(u.font).(font.GlyphEncoder)
+	if !ok || len(u.glyphText) == 0 {
+		return u.font.ToUnicodeCMap(u.usedRunes)
+	}
+	m := make(map[uint16]string, len(u.glyphText)+len(u.usedRunes))
+	for gid, text := range u.glyphText {
+		m[gid] = text
+	}
+	for r, gid := range u.usedRunes {
+		if gid != 0 && m[gid] == "" {
+			m[gid] = string(r)
+		}
+	}
+	return ge.ToUnicodeCMapByGlyph(m)
+}
+
+// embeddedProgramName returns the name of the font program that is embedded,
+// which differs from the registered name for aliased fonts.
+func embeddedProgramName(ef font.EmbeddableFont) string {
+	if n, ok := ef.(interface{ EmbeddedFontName() string }); ok {
+		return n.EmbeddedFontName()
+	}
+	return ef.PostScriptName()
 }
 
 func (u *embeddedFontUsage) markText(text string) {
@@ -45,8 +88,11 @@ type embeddedFontObjects struct {
 	tounicodeNum  int
 }
 
-// buildEmbeddedFontObjects creates all PDF objects for one embedded TrueType font
-// and stores them in objs. Returns the object number of the Type0 font dict.
+// buildEmbeddedFontObjects creates all PDF objects for one embedded font and
+// stores them in objs. TrueType programs are subset and embedded as
+// /FontFile2 under a CIDFontType2; CFF programs (OpenType "OTTO") are
+// embedded whole as /FontFile3 /CIDFontType0C under a CIDFontType0. Returns
+// the object number of the Type0 font dict.
 func buildEmbeddedFontObjects(
 	usage *embeddedFontUsage,
 	objs map[int]model.Object,
@@ -55,8 +101,13 @@ func buildEmbeddedFontObjects(
 ) int {
 	ef := usage.font
 	tag := randomSubsetTag()
-	baseName := tag + "+" + ef.PostScriptName()
+	baseName := tag + "+" + embeddedProgramName(ef)
 	m := ef.Metrics()
+	cff, _ := unwrapFont(ef).(font.CFFFont)
+	cffProgram := []byte(nil)
+	if cff != nil {
+		cffProgram = cff.CFF()
+	}
 
 	// Allocate object numbers.
 	type0Num := *nextNum
@@ -70,26 +121,28 @@ func buildEmbeddedFontObjects(
 	tounicodeNum := *nextNum
 	*nextNum++
 
-	// Subset font program.
-	subsetBytes, err := ef.Subset(usage.usedGIDs)
-	if err != nil {
-		// Fallback: embed full font if subsetting fails.
-		subsetBytes = nil
+	// Font program: a TrueType subset, or the whole CFF program.
+	var subsetBytes []byte
+	fontFileKey := model.Name("FontFile2")
+	if cffProgram != nil {
+		subsetBytes = cffProgram
+		fontFileKey = model.Name("FontFile3")
+	} else if sb, err := ef.Subset(usage.usedGIDs); err == nil {
+		subsetBytes = sb
 	}
-
-	// FontFile2 stream (subset TrueType program).
 	if subsetBytes != nil {
-		objs[fontFileNum] = &model.Stream{
-			Dict: model.Dict{
-				model.Name("Length"): model.Integer(int64(len(subsetBytes))),
-				model.Name("Filter"): model.Name("FlateDecode"),
-			},
-			Content: subsetBytes,
+		dict := model.Dict{
+			model.Name("Length"): model.Integer(int64(len(subsetBytes))),
+			model.Name("Filter"): model.Name("FlateDecode"),
 		}
+		if cffProgram != nil {
+			dict[model.Name("Subtype")] = model.Name("CIDFontType0C")
+		}
+		objs[fontFileNum] = &model.Stream{Dict: dict, Content: subsetBytes}
 	}
 
 	// ToUnicode CMap stream.
-	toUnicodeBytes := ef.ToUnicodeCMap(usage.usedRunes)
+	toUnicodeBytes := usage.toUnicode()
 	objs[tounicodeNum] = &model.Stream{
 		Dict: model.Dict{
 			model.Name("Length"): model.Integer(int64(len(toUnicodeBytes))),
@@ -111,14 +164,14 @@ func buildEmbeddedFontObjects(
 		model.Name("StemV"):       model.Integer(int64(m.StemV)),
 	}
 	if subsetBytes != nil {
-		descriptorDict[model.Name("FontFile2")] = model.Ref{ObjectNumber: fontFileNum}
+		descriptorDict[fontFileKey] = model.Ref{ObjectNumber: fontFileNum}
 	}
 	// CIDSet lists the glyphs in the subset (PDF/A-1 and -2 ask for it; PDF 2.0
 	// deprecates it, so it is only written for PDF/A-2 and -3 output).
 	if withCIDSet {
 		cidSetNum := *nextNum
 		*nextNum++
-		cidSet := buildCIDSet(usage.usedGIDs)
+		cidSet := buildCIDSet(programGlyphs(ef, usage.usedGIDs, cffProgram != nil))
 		objs[cidSetNum] = &model.Stream{
 			Dict:    model.Dict{model.Name("Length"): model.Integer(int64(len(cidSet))), model.Name("Filter"): model.Name("FlateDecode")},
 			Content: cidSet,
@@ -129,19 +182,27 @@ func buildEmbeddedFontObjects(
 
 	// CIDFont (DescendantFont).
 	widths := ef.CIDWidths(usage.usedGIDs)
+	registry, ordering, supplement := "Adobe", "Identity", 0
+	if cff != nil {
+		registry, ordering, supplement = cff.CIDSystemInfo()
+	}
 	cidFontDict := model.Dict{
 		model.Name("Type"):     model.Name("Font"),
 		model.Name("Subtype"):  model.Name("CIDFontType2"),
 		model.Name("BaseFont"): model.Name(baseName),
 		model.Name("CIDSystemInfo"): model.Dict{
-			model.Name("Registry"):   model.String("Adobe"),
-			model.Name("Ordering"):   model.String("Identity"),
-			model.Name("Supplement"): model.Integer(0),
+			model.Name("Registry"):   model.String(registry),
+			model.Name("Ordering"):   model.String(ordering),
+			model.Name("Supplement"): model.Integer(int64(supplement)),
 		},
 		model.Name("FontDescriptor"): model.Ref{ObjectNumber: descriptorNum},
 		model.Name("CIDToGIDMap"):    model.Name("Identity"),
 		model.Name("DW"):             model.Integer(1000),
 		model.Name("W"):              buildCIDWidthArray(widths, m.UnitsPerEm),
+	}
+	if cffProgram != nil {
+		cidFontDict[model.Name("Subtype")] = model.Name("CIDFontType0")
+		delete(cidFontDict, model.Name("CIDToGIDMap"))
 	}
 	objs[cidFontNum] = cidFontDict
 
@@ -250,6 +311,26 @@ func randomSubsetTag() string {
 		tag[i] = 'A' + (b[i/2]>>(4*(1-uint(i%2))))&0x0F%26
 	}
 	return string(tag)
+}
+
+// programGlyphs returns the glyphs the embedded font program holds, which a
+// CIDSet must list in full (ISO 19005-2 §6.2.11.4.2): every CID of a whole
+// CFF program, or every glyph slot of a TrueType subset.
+func programGlyphs(ef font.EmbeddableFont, used map[uint16]bool, wholeProgram bool) map[uint16]bool {
+	f := unwrapFont(ef)
+	if wholeProgram {
+		if pc, ok := f.(interface{ ProgramCIDs() map[uint16]bool }); ok {
+			if all := pc.ProgramCIDs(); len(all) > 0 {
+				return all
+			}
+		}
+	}
+	if sg, ok := f.(interface {
+		SubsetGlyphs(map[uint16]bool) map[uint16]bool
+	}); ok {
+		return sg.SubsetGlyphs(used)
+	}
+	return used
 }
 
 // buildCIDSet returns a bitmap with one bit per CID, set for the CIDs the subset

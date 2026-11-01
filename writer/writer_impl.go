@@ -15,12 +15,14 @@ import (
 	"github.com/gsoultan/gpdf/security"
 	"github.com/gsoultan/gpdf/stream"
 	"github.com/gsoultan/gpdf/stream/defaults"
+	"github.com/gsoultan/gpdf/stream/predictor"
 )
 
 const (
 	headerPDF20 = "%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"
 	// RC4 encryption is deprecated in PDF 2.0, so RC4-encrypted output is labelled 1.7.
 	headerPDF17 = "%PDF-1.7\n%\xE2\xE3\xCF\xD3\n"
+	headerPDF14 = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
 )
 
 // PDFWriter implements Writer for PDF 2.0 output.
@@ -28,6 +30,7 @@ type PDFWriter struct {
 	filters       stream.FilterRegistry
 	randomSource  io.Reader
 	validateGraph bool
+	objectStreams bool
 }
 
 // NewPDFWriter returns a PDF writer with default stream filters registered.
@@ -51,7 +54,14 @@ func NewPDFWriterWithOptions(options WriterOptions) *PDFWriter {
 		filters:       filters,
 		randomSource:  opts.RandomSource,
 		validateGraph: *opts.ValidateGraph,
+		objectStreams: *opts.ObjectStreams,
 	}
+}
+
+// compactFor reports whether the output for header uses object streams and a
+// cross-reference stream: when enabled and the version is at least 1.5.
+func (pw *PDFWriter) compactFor(header string) bool {
+	return pw.objectStreams && header != headerPDF14
 }
 
 // generationProvider is implemented by documents read from a file, whose objects can have
@@ -141,7 +151,9 @@ func fileID(id []byte) model.Array {
 	return model.Array{model.HexString(id), model.HexString(id)}
 }
 
-// Write writes the document to w.
+// Write writes the document to w. Non-stream objects are packed into object streams
+// and the cross-reference is a stream unless WriterOptions.ObjectStreams is false or
+// the document's version is below 1.5, in which case a classic table is written.
 func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
 	if pw.validateGraph {
 		if err := validateDocumentGraph(doc); err != nil {
@@ -153,27 +165,28 @@ func (pw *PDFWriter) Write(w io.Writer, doc Document) error {
 		return err
 	}
 	known := knownNumbers(objs)
-	offsets := make(map[int]int64, len(objs))
-	gens := make(map[int]int, len(objs))
-	body := bytes.NewBufferString(headerFor(doc))
+	maxNum := objs[len(objs)-1].ref.ObjectNumber
+	trailer := outputTrailer(doc.Trailer().Dict, maxNum+1)
+	header := headerFor(doc)
+	var body bytes.Buffer
+	out := &offsetWriter{w: &body}
+	if _, ok := trailer[model.Name("ID")].(model.Array); !ok {
+		out.h = md5.New()
+	}
+	io.WriteString(out, header)
+	pk := newPacker(pw, nil, known, pw.compactFor(header), maxNum+1)
 	for _, o := range objs {
-		offsets[o.ref.ObjectNumber] = int64(body.Len())
-		gens[o.ref.ObjectNumber] = o.ref.Generation
-		if err := pw.writeIndirectObject(body, o.ref, o.obj, nil, known); err != nil {
+		if err := pk.write(out, o.ref, o.obj); err != nil {
 			return err
 		}
 	}
-	maxNum := objs[len(objs)-1].ref.ObjectNumber
-	trailer := outputTrailer(doc.Trailer().Dict, maxNum+1)
-	if _, ok := trailer[model.Name("ID")].(model.Array); !ok {
-		sum := md5.Sum(body.Bytes())
-		trailer[model.Name("ID")] = fileID(sum[:])
-	}
-	xrefStart := int64(body.Len())
-	if err := pw.writeXRefTable(body, offsets, gens, maxNum); err != nil {
+	if err := pk.flush(out); err != nil {
 		return err
 	}
-	if err := pw.writeTrailer(body, trailer, xrefStart, known); err != nil {
+	if out.h != nil {
+		trailer[model.Name("ID")] = fileID(out.h.Sum(nil))
+	}
+	if err := pk.finish(out, trailer); err != nil {
 		return err
 	}
 	_, err = w.Write(body.Bytes())
@@ -223,26 +236,20 @@ func (pw *PDFWriter) writeEncrypted(w io.Writer, doc Document, header string, bu
 	trailer[model.Name("Encrypt")] = model.Ref{ObjectNumber: encryptNum}
 	trailer[model.Name("ID")] = fileID(id)
 
-	offsets := make(map[int]int64, len(objs)+1)
-	gens := make(map[int]int, len(objs)+1)
-	body := bytes.NewBufferString(header)
+	var body bytes.Buffer
+	out := &offsetWriter{w: &body}
+	io.WriteString(out, header)
+	pk := newPacker(pw, enc, known, pw.compactFor(header), encryptNum+1)
 	for _, o := range objs {
-		offsets[o.ref.ObjectNumber] = int64(body.Len())
-		gens[o.ref.ObjectNumber] = o.ref.Generation
-		if err := pw.writeIndirectObject(body, o.ref, o.obj, enc, known); err != nil {
+		if err := pk.write(out, o.ref, o.obj); err != nil {
 			return err
 		}
 	}
-	// The encryption dictionary itself is never encrypted.
-	offsets[encryptNum] = int64(body.Len())
-	if err := pw.writeIndirectObject(body, model.Ref{ObjectNumber: encryptNum}, encDict, nil, known); err != nil {
+	// The encryption dictionary itself is never encrypted, nor stored in an object stream.
+	if err := pk.writeDirect(out, model.Ref{ObjectNumber: encryptNum}, encDict, nil); err != nil {
 		return err
 	}
-	xrefStart := int64(body.Len())
-	if err := pw.writeXRefTable(body, offsets, gens, encryptNum); err != nil {
-		return err
-	}
-	if err := pw.writeTrailer(body, trailer, xrefStart, known); err != nil {
+	if err := pk.finish(out, trailer); err != nil {
 		return err
 	}
 	_, err = w.Write(body.Bytes())
@@ -304,6 +311,10 @@ func (pw *PDFWriter) writeXRefTable(w io.Writer, offsets map[int]int64, gens map
 }
 
 // WriteIncremental appends an incremental update (new objects + xref + trailer with /Prev + startxref + %%EOF) to w.
+// The cross-reference section has the form of the base file's: a stream when the base
+// trailer is a cross-reference stream dictionary (/Type /XRef), a table otherwise
+// (ISO 32000-2 §7.5.8.1). Objects are written directly, not in object streams, so
+// that a signature's /ByteRange and /Contents are found at their offsets.
 func (pw *PDFWriter) WriteIncremental(w io.Writer, appendOffset int64, baseStartXRef int64, doc Document) error {
 	if pw.validateGraph {
 		if err := validateIncrementalDocumentGraph(doc); err != nil {
@@ -335,10 +346,21 @@ func (pw *PDFWriter) WriteIncremental(w io.Writer, appendOffset int64, baseStart
 		return err
 	}
 	xrefStart := appendOffset + int64(body.Len())
+	trailer := copyTrailerWithPrev(doc.Trailer().Dict, baseStartXRef, objNums)
+	if t, _ := doc.Trailer().Dict[model.Name("Type")].(model.Name); t == "XRef" {
+		size, _ := trailer[model.Name("Size")].(model.Integer)
+		pk := newPacker(pw, nil, nil, false, int(size))
+		for _, num := range objNums {
+			pk.entries[num] = xrefEntry{typ: 1, field2: offsets[num], field3: gens[num]}
+			pk.note(num)
+		}
+		out := &offsetWriter{w: w, off: xrefStart}
+		return pk.writeXRefStream(out, trailer, objNums)
+	}
 	if err := pw.writeXRefSubsection(w, objNums, offsets, gens); err != nil {
 		return err
 	}
-	return pw.writeTrailer(w, copyTrailerWithPrev(doc.Trailer().Dict, baseStartXRef, objNums), xrefStart, nil)
+	return pw.writeTrailer(w, trailer, xrefStart, nil)
 }
 
 // copyTrailerWithPrev builds the trailer of an incremental update.
@@ -523,8 +545,9 @@ func filterNames(obj model.Object) ([]string, bool) {
 
 // encodeStream re-encodes the (decoded) stream content with the stream's filter chain and
 // returns the dictionary to write and the encoded bytes. Filters are applied last to first,
-// since a reader decodes them first to last. Flate and LZW are re-encoded without a predictor,
-// so their /DecodeParms entries are dropped; other filters keep theirs. If any filter cannot
+// since a reader decodes them first to last. Flate and LZW apply the PNG or TIFF predictor
+// their /DecodeParms ask for (image samples and cross-reference rows compress far better
+// with one); other filters keep their parameters untouched. If any filter cannot
 // encode, the content is written unfiltered and /Filter and /DecodeParms are removed, so the
 // dictionary never claims an encoding the bytes do not have. A filter chain with a name the
 // registry does not know is passed through untouched (see reader: such streams stay encoded).
@@ -566,17 +589,46 @@ func (pw *PDFWriter) encodeStream(v *model.Stream) (model.Dict, []byte) {
 			// bytes and the dictionary are copied as they are.
 			return maps.Clone(v.Dict), v.Content
 		}
+		if names[i] == "FlateDecode" || names[i] == "LZWDecode" {
+			// The predictor the parameters ask for is applied before compression;
+			// if it cannot be, the parameters are dropped so they never describe
+			// an encoding the bytes do not have.
+			if pd, ok := parms[i].(model.Dict); ok {
+				predicted, err := predictor.Encode(data, predictorParams(pd))
+				if err != nil {
+					parms[i] = nil
+				} else {
+					data = predicted
+				}
+			}
+		}
 		var buf bytes.Buffer
 		if err := f.Encode(&buf, bytes.NewReader(data), names[i]); err != nil {
 			return raw()
 		}
 		data = buf.Bytes()
-		if names[i] == "FlateDecode" || names[i] == "LZWDecode" {
-			parms[i] = nil
-		}
 	}
 	setDecodeParms(dict, parms)
 	return dict, data
+}
+
+// predictorParams reads the predictor entries of a /DecodeParms dictionary.
+func predictorParams(d model.Dict) predictor.Params {
+	intOf := func(k string) int {
+		switch v := d[model.Name(k)].(type) {
+		case model.Integer:
+			return int(v)
+		case model.Real:
+			return int(v)
+		}
+		return 0
+	}
+	return predictor.Params{
+		Predictor:        intOf("Predictor"),
+		Colors:           intOf("Colors"),
+		BitsPerComponent: intOf("BitsPerComponent"),
+		Columns:          intOf("Columns"),
+	}
 }
 
 func setDecodeParms(dict model.Dict, parms []model.Object) {

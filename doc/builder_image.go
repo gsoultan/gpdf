@@ -16,8 +16,25 @@ func (b *DocumentBuilder) addImageRun(pageIndex int, run imageRun) *DocumentBuil
 	if run.BitsPerComponent <= 0 {
 		run.BitsPerComponent = 8
 	}
-	b.pc.pages[pageIndex].AddImage(run)
+	b.addImage(&b.pc.pages[pageIndex], run)
 	return b
+}
+
+// addImage applies the image settings to run and queues it on the page. In
+// streaming mode the image's objects are written out at once and the samples
+// released.
+func (b *DocumentBuilder) addImage(ps *pageSpec, run imageRun) {
+	if err := b.prepareImage(&run); err != nil {
+		b.setErr(err)
+		return
+	}
+	if b.stream != nil {
+		if err := b.stream.writeImage(b, &run); err != nil {
+			b.setErr(err)
+			return
+		}
+	}
+	ps.AddImage(run)
 }
 
 func (b *DocumentBuilder) lastPageIndex() int {

@@ -36,11 +36,97 @@ type documentCore struct {
 	objects    map[model.Ref]model.Object
 	cacheOrder []model.Ref
 	cacheLimit int
+	// modified holds the objects changed or added since the file was read. They are
+	// never evicted from the cache, and an incremental save writes exactly them.
+	modified map[model.Ref]bool
+	redacted bool
 }
 
-func (c *documentCore) Trailer() model.Trailer            { return c.trailer }
-func (c *documentCore) StartXRefOffset() int64            { return c.startXRefOffset }
-func (c *documentCore) ObjectNumbers() []int              { return c.xref.ObjectNumbers() }
+// Source returns the file the document was read from and its size.
+func (c *documentCore) Source() (io.ReaderAt, int64) { return c.r, c.size }
+
+// MarkModified records obj as the new value of ref, so that Save writes it and
+// SaveIncremental appends it.
+func (c *documentCore) MarkModified(ref model.Ref, obj model.Object) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.modified == nil {
+		c.modified = make(map[model.Ref]bool)
+	}
+	if _, cached := c.objects[ref]; !cached {
+		c.cacheOrder = append(c.cacheOrder, ref)
+	}
+	c.objects[ref] = obj
+	c.modified[ref] = true
+}
+
+// NewObject adds obj under the next free object number (the trailer /Size grows
+// with it) and returns its reference.
+func (c *documentCore) NewObject(obj model.Object) model.Ref {
+	size, _ := c.trailer.Dict[model.Name("Size")].(model.Integer)
+	num := int(size)
+	for _, n := range c.xref.ObjectNumbers() {
+		if n >= num {
+			num = n + 1
+		}
+	}
+	c.mu.Lock()
+	for ref := range c.modified {
+		if ref.ObjectNumber >= num {
+			num = ref.ObjectNumber + 1
+		}
+	}
+	c.mu.Unlock()
+	if num < 1 {
+		num = 1
+	}
+	ref := model.Ref{ObjectNumber: num}
+	c.MarkModified(ref, obj)
+	if c.trailer.Dict == nil {
+		c.trailer.Dict = model.Dict{}
+	}
+	c.trailer.Dict[model.Name("Size")] = model.Integer(int64(num + 1))
+	return ref
+}
+
+// ModifiedObjects returns the objects changed or added since the file was read.
+func (c *documentCore) ModifiedObjects() map[model.Ref]model.Object {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[model.Ref]model.Object, len(c.modified))
+	for ref := range c.modified {
+		out[ref] = c.objects[ref]
+	}
+	return out
+}
+
+// MarkRedacted records that content was removed, so that only a full rewrite may
+// save the document (an incremental update would keep the removed bytes).
+func (c *documentCore) MarkRedacted() { c.redacted = true }
+
+// Redacted reports whether MarkRedacted was called.
+func (c *documentCore) Redacted() bool { return c.redacted }
+
+func (c *documentCore) Trailer() model.Trailer { return c.trailer }
+func (c *documentCore) StartXRefOffset() int64 { return c.startXRefOffset }
+func (c *documentCore) ObjectNumbers() []int {
+	nums := c.xref.ObjectNumbers()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.modified) == 0 {
+		return nums
+	}
+	seen := make(map[int]bool, len(nums))
+	for _, n := range nums {
+		seen[n] = true
+	}
+	for ref := range c.modified {
+		if !seen[ref.ObjectNumber] {
+			nums = append(nums, ref.ObjectNumber)
+		}
+	}
+	return nums
+}
 func (c *documentCore) Version() PDFVersion               { return c.version }
 func (c *documentCore) Linearization() *LinearizationInfo { return c.linearization }
 
@@ -166,9 +252,13 @@ func (c *documentCore) enforceObjectCacheLimitLocked() {
 	if c.cacheLimit <= 0 {
 		return
 	}
-	for len(c.cacheOrder) > c.cacheLimit {
-		oldest := c.cacheOrder[0]
-		c.cacheOrder = c.cacheOrder[1:]
+	for i := 0; i < len(c.cacheOrder) && len(c.cacheOrder)-i > c.cacheLimit; {
+		oldest := c.cacheOrder[i]
+		if c.modified[oldest] {
+			i++ // changed objects stay
+			continue
+		}
+		c.cacheOrder = append(c.cacheOrder[:i], c.cacheOrder[i+1:]...)
 		delete(c.objects, oldest)
 	}
 }

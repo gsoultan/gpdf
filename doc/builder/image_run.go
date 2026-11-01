@@ -33,4 +33,9 @@ type ImageRun struct {
 
 	// Seq is the run's position among all runs on its page (see Page.AddImage).
 	Seq int
+
+	// ObjNum and MaskObjNum are set when the image's objects have already been
+	// written (streaming output); Raw and Mask are then released.
+	ObjNum     int
+	MaskObjNum int
 }

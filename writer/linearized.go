@@ -413,7 +413,8 @@ func (lw *linearizedWriter) hintTables(hintOff, hintLen int64) hintTableSet {
 		return l
 	}
 	// Per page: object count, section length, content stream offset/length and the
-	// shared objects it refers to.
+	// shared objects it refers to. Later pages refer to first-page objects they
+	// reuse as well as to objects of the shared section.
 	nObj := make([]int64, nPages)
 	pageLen := make([]int64, nPages)
 	contentOff := make([]int64, nPages)
@@ -424,7 +425,10 @@ func (lw *linearizedWriter) hintTables(hintOff, hintLen int64) hintTableSet {
 	// identifiers index this combined list.
 	firstGroups := p.firstPage[1:]
 	nFirst := len(firstGroups)
-	sharedIndex := make(map[int]int, len(p.shared))
+	sharedIndex := make(map[int]int, nFirst+len(p.shared))
+	for i, n := range firstGroups {
+		sharedIndex[n] = i
+	}
 	for i, n := range p.shared {
 		sharedIndex[n] = nFirst + i
 	}
@@ -445,12 +449,11 @@ func (lw *linearizedWriter) hintTables(hintOff, hintLen int64) hintTableSet {
 		}
 		return lw.offsets[new] - sectionStart, int64(len(lw.body[new]))
 	}
-	// First page: from the page object to the end of the first-page section.
+	// First page: from the page object to the end of the first-page section. Its
+	// objects are listed in the shared object table instead, so the first page
+	// carries no shared object identifiers (F.4.1).
 	nObj[0] = int64(nFirst)
 	pageLen[0] = secLen(firstGroups)
-	for i := range nFirst {
-		sharedIDs[0] = append(sharedIDs[0], i)
-	}
 	contentOff[0], contentLen[0] = contentInfo(p.pages[0], lw.offsets[lw.renum[p.pages[0]]])
 	for i, sec := range p.pageSecs {
 		nObj[i+1] = int64(len(sec))

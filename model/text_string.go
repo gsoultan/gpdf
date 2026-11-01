@@ -73,14 +73,15 @@ func IsTextStringBOM(b []byte) bool {
 	return bytes.HasPrefix(b, bomUTF16BE) || bytes.HasPrefix(b, bomUTF8)
 }
 
-// EncodeTextString returns s as a PDF text string. Pure ASCII is written as is (it is
-// the same in every text encoding). Other text is written as UTF-8 with a byte order
-// mark when utf8BOM is set (PDF 2.0) and as UTF-16BE with a byte order mark otherwise,
-// which every PDF reader understands.
+// EncodeTextString returns s as a PDF text string. Printable ASCII is written as
+// is (it is the same in every text encoding). Other text, including control
+// characters that PDFDocEncoding leaves undefined, is written as UTF-8 with a
+// byte order mark when utf8BOM is set (PDF 2.0) and as UTF-16BE with a byte
+// order mark otherwise, which every PDF reader understands.
 func EncodeTextString(s string, utf8BOM bool) String {
 	ascii := true
 	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
+		if c := s[i]; c >= 0x7F || (c < 0x20 && c != '\t' && c != '\n' && c != '\r') {
 			ascii = false
 			break
 		}

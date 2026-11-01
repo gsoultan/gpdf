@@ -18,6 +18,8 @@ type builtDocument struct {
 	// version, when set, is the PDF header version the writer uses instead of 2.0.
 	version string
 	pdfa    bool
+	// noObjectStreams selects the classic cross-reference table layout.
+	noObjectStreams bool
 }
 
 // ErrPDFAEncryption is returned when a PDF/A document is saved with a password.
@@ -89,17 +91,24 @@ func (d *builtDocument) Pages() ([]model.Page, error) {
 	return out, nil
 }
 
+// newWriter returns the writer for this document's layout options.
+func (d *builtDocument) newWriter() *writer.PDFWriter {
+	opts := writer.WriterOptions{}
+	if d.noObjectStreams {
+		opts.ObjectStreams = new(false)
+	}
+	return writer.NewPDFWriterWithOptions(opts)
+}
+
 func (d *builtDocument) Save(w io.Writer) error {
-	pw := writer.NewPDFWriter()
-	return pw.Write(w, d)
+	return d.newWriter().Write(w, d)
 }
 
 func (d *builtDocument) SaveWithPassword(w io.Writer, userPassword, ownerPassword string) error {
 	if d.pdfa {
 		return ErrPDFAEncryption
 	}
-	pw := writer.NewPDFWriter()
-	return pw.WriteWithPassword(w, d, userPassword, ownerPassword)
+	return d.newWriter().WriteWithPassword(w, d, userPassword, ownerPassword)
 }
 
 // SaveWithAES256Password writes the document encrypted with AES-256. This is
@@ -108,13 +117,11 @@ func (d *builtDocument) SaveWithAES256Password(w io.Writer, userPassword, ownerP
 	if d.pdfa {
 		return ErrPDFAEncryption
 	}
-	pw := writer.NewPDFWriter()
-	return pw.WriteWithAES256Password(w, d, userPassword, ownerPassword)
+	return d.newWriter().WriteWithAES256Password(w, d, userPassword, ownerPassword)
 }
 
 func (d *builtDocument) SaveLinearized(ws writer.WriteSeeker) error {
-	pw := writer.NewPDFWriter()
-	return pw.WriteLinearized(ws, d)
+	return d.newWriter().WriteLinearized(ws, d)
 }
 
 func (d *builtDocument) ReadContent() (string, error) {
@@ -123,6 +130,49 @@ func (d *builtDocument) ReadContent() (string, error) {
 
 func (d *builtDocument) ReadContentPerPage() ([]string, error) {
 	return reader.ExtractTextPerPage(d)
+}
+
+func (d *builtDocument) ReadContentInReadingOrder() (string, error) {
+	return reader.ExtractTextInReadingOrder(d)
+}
+
+func (d *builtDocument) ReadStructuredText() ([]reader.TextElement, error) {
+	return reader.ExtractStructuredText(d)
+}
+
+// SaveIncremental is not available for a document built in memory.
+func (d *builtDocument) SaveIncremental(io.Writer) error { return ErrNoBaseFile }
+
+// SetObject replaces or adds an indirect object.
+func (d *builtDocument) SetObject(ref model.Ref, obj model.Object) {
+	d.objects[ref.ObjectNumber] = obj
+	if ref.ObjectNumber >= d.size {
+		d.size = ref.ObjectNumber + 1
+		d.trailer.Dict[model.Name("Size")] = model.Integer(int64(d.size))
+	}
+}
+
+// NewObject adds obj under the next free object number.
+func (d *builtDocument) NewObject(obj model.Object) model.Ref {
+	ref := model.Ref{ObjectNumber: d.size}
+	d.SetObject(ref, obj)
+	return ref
+}
+
+// SetInfo sets one entry of the Info dictionary.
+func (d *builtDocument) SetInfo(key string, value model.Object) error {
+	if ref := d.trailer.Info(); ref != nil {
+		if info, ok := d.objects[ref.ObjectNumber].(model.Dict); ok {
+			info[model.Name(key)] = value
+			return nil
+		}
+	}
+	ref := d.NewObject(model.Dict{model.Name(key): value})
+	if d.trailer.Dict == nil {
+		d.trailer.Dict = model.Dict{}
+	}
+	d.trailer.Dict[model.Name("Info")] = ref
+	return nil
 }
 
 func (d *builtDocument) ReadImages() ([]reader.ImageInfo, error) {

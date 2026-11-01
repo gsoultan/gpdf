@@ -90,7 +90,7 @@ func (b *DocumentBuilder) preparePDFA() {
 		b.metadata.CreationDate = time.Now()
 	}
 	if b.pdfa.pdf20() {
-		// PDF/A-4 deprecates the Info dictionary apart from the dates: XMP carries the rest.
+		// PDF/A-4 forbids the Info dictionary (ISO 19005-4 §6.1.3): XMP carries the metadata.
 		b.metadata.DatesOnly = true
 	}
 	if len(b.metadata.MetadataXMP) == 0 {
@@ -113,6 +113,12 @@ func (b *DocumentBuilder) xmpInput() metadata.XMPInput {
 			in.PDFARev = "2020"
 		}
 	}
+	if b.pdfua != "" {
+		in.PDFUAPart = string(b.pdfua)
+		if b.pdfua == PDFUA2 {
+			in.PDFUARev = "2024"
+		}
+	}
 	return in
 }
 
@@ -121,11 +127,14 @@ func (b *DocumentBuilder) xmpInput() metadata.XMPInput {
 // §14.3.3), so the builder always mirrors them into /Metadata.
 func (b *DocumentBuilder) prepareMetadata() {
 	b.metadata.PDF20 = b.pdfa == "" || b.pdfa.pdf20()
+	if b.pdfua == PDFUA1 && !(b.pdfa != "" && b.pdfa.pdf20()) {
+		b.metadata.PDF20 = false // PDF/UA-1 files are PDF 1.7
+	}
 	if b.pdfa != "" {
 		b.preparePDFA()
 		return
 	}
-	if len(b.metadata.MetadataXMP) == 0 && (b.metadata.HasFields() || !b.metadata.CreationDate.IsZero()) {
+	if len(b.metadata.MetadataXMP) == 0 && (b.metadata.HasFields() || !b.metadata.CreationDate.IsZero() || b.pdfua != "") {
 		b.metadata.MetadataXMP = metadata.BuildXMP(b.xmpInput())
 	}
 }
@@ -148,16 +157,19 @@ func (b *DocumentBuilder) checkPDFA(objs map[int]model.Object) error {
 				if t, _ := v[model.Name("Type")].(model.Name); t == "Font" {
 					err = checkPDFAFont(v, objs)
 				}
-			case *model.Stream:
-				if st, _ := v.Dict[model.Name("Subtype")].(model.Name); st == "Image" && rgbIntent {
-					if cs, _ := v.Dict[model.Name("ColorSpace")].(model.Name); cs == "DeviceCMYK" {
-						err = fmt.Errorf("%w: DeviceCMYK image needs a CMYK output intent", ErrPDFA)
-					}
-				}
 			}
 		})
 		if err != nil {
 			return err
+		}
+	}
+	if rgbIntent {
+		for i := range b.pc.pages {
+			for _, im := range b.pc.pages[i].ImageRuns {
+				if im.ColorSpace == "DeviceCMYK" {
+					return fmt.Errorf("%w: DeviceCMYK image needs a CMYK output intent", ErrPDFA)
+				}
+			}
 		}
 	}
 	if b.pdfa == PDFA4F && len(b.attachments) == 0 {

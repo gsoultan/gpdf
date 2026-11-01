@@ -47,8 +47,11 @@ type Font struct {
 	// kern: packed (gid1 << 16 | gid2) to kerning adjustment in font units
 	kernPairs map[uint32]int16
 
-	// GSUB: ligature substitution
+	// GSUB: ligature and contextual-form substitution
 	gsub *GSUB
+
+	// CFF: set for OpenType fonts with PostScript outlines
+	cff *cffInfo
 }
 
 // PostScriptName returns the font's PostScript name from the name table.
@@ -112,31 +115,16 @@ func (f *Font) Kern(r1, r2 rune) int {
 	return int(f.kernPairs[key])
 }
 
-// TextWidth measures the total advance width of text in points at the given fontSize.
+// TextWidth measures the total advance width of text in points at the given
+// fontSize, after shaping (contextual forms, ligatures and kerning), so that
+// it matches what the glyphs drawn for the text occupy.
 func (f *Font) TextWidth(text string, fontSize float64) float64 {
 	if f.unitsPerEm == 0 {
 		return 0
 	}
-	gids := make([]uint16, 0, len(text))
-	for _, r := range text {
-		gids = append(gids, f.runeToGlyph[r])
-	}
-	if f.gsub != nil && len(f.gsub.Ligatures) > 0 {
-		gids = f.applyLigatures(gids)
-	}
-
 	var total int
-	for i, gid := range gids {
-		if int(gid) < len(f.glyphWidths) {
-			total += int(f.glyphWidths[gid])
-		}
-		if i > 0 {
-			// Kerning is generally not applied to ligatures in the same way,
-			// but we'll apply it between the ligature and adjacent glyphs.
-			// Actually, kernPairs uses GIDs.
-			key := uint32(gids[i-1])<<16 | uint32(gids[i])
-			total += int(f.kernPairs[key])
-		}
+	for _, g := range f.Shape(text) {
+		total += g.Advance + g.Kern
 	}
 	return float64(total) * fontSize / float64(f.unitsPerEm)
 }
@@ -164,9 +152,10 @@ func (f *Font) Metrics() font.Metrics {
 // NumGlyphs returns the total number of glyphs in the font.
 func (f *Font) NumGlyphs() int { return f.numGlyphs }
 
-// GlyphID returns the glyph index for the given rune, or 0 (.notdef) if unmapped.
+// GlyphID returns the glyph code for the given rune, or 0 (.notdef) if
+// unmapped: the glyph index, or the CID for a CID-keyed CFF font.
 func (f *Font) GlyphID(r rune) uint16 {
-	return f.runeToGlyph[r]
+	return f.glyphCode(f.runeToGlyph[r])
 }
 
 // Encode converts a Unicode string to a byte sequence of 2-byte big-endian glyph IDs.
@@ -183,7 +172,8 @@ func (f *Font) Encode(text string) []byte {
 
 	out := make([]byte, 0, len(gids)*2)
 	for _, gid := range gids {
-		out = append(out, byte(gid>>8), byte(gid))
+		code := f.glyphCode(gid)
+		out = append(out, byte(code>>8), byte(code))
 	}
 	return out
 }
@@ -223,13 +213,14 @@ func (f *Font) applyLigatures(gids []uint16) []uint16 {
 	return res
 }
 
-// CIDWidths returns a map from glyph ID to advance width (in font units)
-// for all glyph IDs in usedGlyphIDs.
+// CIDWidths returns a map from glyph code to advance width (in font units)
+// for all codes in usedGlyphIDs.
 func (f *Font) CIDWidths(usedGlyphIDs map[uint16]bool) map[uint16]int {
 	out := make(map[uint16]int, len(usedGlyphIDs))
-	for gid := range usedGlyphIDs {
+	for code := range usedGlyphIDs {
+		gid := f.glyphIndex(code)
 		if int(gid) < len(f.glyphWidths) {
-			out[gid] = int(f.glyphWidths[gid])
+			out[code] = int(f.glyphWidths[gid])
 		}
 	}
 	return out

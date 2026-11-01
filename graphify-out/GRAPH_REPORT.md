@@ -1,390 +1,542 @@
-# Graph Report - gpdf  (2026-10-31)
+# Graph Report - gpdf  (2026-11-01)
 
 ## Corpus Check
-- 252 files · ~99,460 words
-- Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 2 file(s) not represented in the graph (top: (none) 2)
+- cluster-only mode — file stats not available
 
 ## Summary
-- 2093 nodes · 9405 edges · 110 communities (58 shown, 52 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 309 edges (avg confidence: 0.85)
+- 3048 nodes · 17097 edges · 141 communities (87 shown, 54 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 760 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `036d17fb`
+- Built from commit: `dff41a78`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- Ref
-- read_document_test.go
-- io.ReaderAt
+- Page
+- pdf20_test.go
+- syntax/impl/tokenizer.go
 - Name
+- DocumentBuilder
+- Op
+- Object
 - Color
-- contentSource
+- New
+- Ref
+- testing.T
 - LineStyle
 - PageAccess
-- Dict
-- DocumentBuilder
-- testing.T
-- TextBoxObject
-- Drawer
-- extractBlocksFromOps
-- steps
-- TableBuilder
-- go_pkg_io
-- io.Reader
-- Integer
-- FlowBuilder
-- io.Writer
-- pdfDocument
-- layout.go
-- FilterRegistry
-- Font
-- New
-- contentTokenizer
-- .layoutTextIntoPages
 - ITableBuilder
-- ExtractText
-- builtDocument
-- NewPDFReader
+- io.Writer
+- Integer
+- go_pkg_io
 - Open
-- ListObject
-- ExtractLayout
-- ExtractTextPerPage
-- Document
-- fontConfig
-- .ImageWithLayout
-- TextStyle
-- validation.go
+- .layoutTextIntoPages
+- TextBoxObject
+- pdftest.go
+- FlowBuilder
+- gPDF — architecture map
 - Font
-- extract_tables.go
-- TaggingAccess
-- standardR4Decryptor
-- Document
-- Support
-- Registry
-- runlength.go
-- .WriteLinearized
-- mockFont
-- EncodeBytes
-- scanner.go
-- Signer
-- version_detector.go
-- Usage
-- Handle
-- Table
-- .Scan
-- MetadataBuilder
-- OpenReaderWithPassword
-- OutlineBuilder
+- pdfDocument
+- Drawer
+- steps
+- ReplacesContent
+- validation.go
+- builtDocument
+- with
+- cms.go
+- .writeEncrypted
+- io.ReaderAt
+- contentTokenizer
 - parser.go
-- FormBuilder
-- TextBuilder
-- CatalogProvider
-- StandardDecryptor
+- NewStandardDecryptor
+- Document
+- buildEmbeddedFontObjects
+- structWalker
+- testing.B
+- writer/options.go
+- NewPDFReader
+- OpenReaderWithPassword
+- EmbeddableFont
+- .setErr
+- steps
+- .ApplyPageSize
+- Registry
+- version_detector.go
+- ListObject
+- bidi.go
+- Decode
+- Font
+- scanner.go
+- Sign
+- Verify
+- decode.go
+- steps
+- applyFilterChain
+- Features
+- shape_test.go
+- ParserImpl
+- PDFWriter
+- Support
+- packer
+- TaggingAccess
+- imageRun
+- arabic.go
+- EncodeBytes
+- SearchPages
+- StreamWriter
+- runlength.go
+- time.Time
 - Writer
+- mockFont
+- Usage
+- buildSignatureUpdate
+- Handle
+- PageText
+- Page
+- appearanceStream
+- TextStyle
+- .Subset
+- TextBlock
+- ReaderOptions
+- saslprep.go
+- project.yml
+- CatalogReader
+- PDFALevel
+- BuildAES256EncryptDictForWriteWithRandom
+- .hintTables
+- TableImpl
 - RectObject
-- pagesize.go
 - ContentExtractor
 - Table
+- CollectionOptions
+- ContentReader
+- pageConfig
+- objHeaderBefore
 - CellStyle
-- ICCProfile
-- go_pkg_sort
+- TestSaveLinearizedWritesUsableHintTables
+- Encode
 - ImageExtractor
-- LayoutExtractor
-- StructureProvider
-- validateDocumentGraph
-- ImageOptions
-- Support
-- FormProvider
+- bitReader
 - multiFlag
+- Tokenizer
+- CLAUDE.md
+- suggested_commands.md
+- task_completion_checklist.md
 - github.com/gsoultan/gpdf
 
 ## God Nodes (most connected - your core abstractions)
-1. `Name` - 215 edges
-2. `Ref` - 176 edges
-3. `Object` - 165 edges
-4. `PageAccess` - 129 edges
-5. `Page` - 117 edges
-6. `DocumentBuilder` - 114 edges
-7. `Stream` - 103 edges
-8. `Trailer` - 103 edges
-9. `Catalog` - 99 edges
-10. `Outlines` - 91 edges
+1. `Name` - 328 edges
+2. `Object` - 284 edges
+3. `Ref` - 259 edges
+4. `Page` - 168 edges
+5. `Stream` - 161 edges
+6. `Trailer` - 155 edges
+7. `Catalog` - 148 edges
+8. `DocumentBuilder` - 141 edges
+9. `Outlines` - 138 edges
+10. `AcroForm` - 137 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `main()` --calls--> `New()`  [EXTRACTED]
-  cmd/cv/main.go → doc/doc.go
-- `main()` --calls--> `New()`  [EXTRACTED]
-  cmd/example/main.go → doc/doc.go
-- `main()` --calls--> `Open()`  [EXTRACTED]
-  cmd/example_merge/main.go → doc/doc.go
-- `main()` --calls--> `Merge()`  [EXTRACTED]
-  cmd/example_merge_remote/main.go → doc/merge.go
-- `openFromURL()` --references--> `Document`  [EXTRACTED]
-  cmd/example_merge_remote/main.go → doc/document.go
+- `gPDF — architecture map` --references--> `DocumentBuilder`  [INFERRED]
+  .serena/memories/architecture.md → doc/builder.go
+- `gPDF — architecture map` --references--> `textOpsWriter`  [INFERRED]
+  .serena/memories/architecture.md → doc/builder_content.go
+- `Medium` --references--> `jpegHasAdobeMarker()`  [INFERRED]
+  .serena/memories/review_findings.md → doc/builder_content.go
+- `gPDF — architecture map` --references--> `shapedTextArg()`  [INFERRED]
+  .serena/memories/architecture.md → doc/builder_content.go
+- `gPDF — architecture map` --references--> `textStateTracker`  [INFERRED]
+  .serena/memories/architecture.md → doc/builder_content.go
 
 ## Import Cycles
 - 2-file cycle: `doc/example_split_test.go -> doc/merge_test.go -> doc/example_split_test.go`
 - 2-file cycle: `doc/example_split_test.go -> doc/split_test.go -> doc/example_split_test.go`
 - 2-file cycle: `doc/merge_test.go -> doc/split_test.go -> doc/merge_test.go`
+- 2-file cycle: `stream/defaults/defaults.go -> stream/fuzz_test.go -> stream/defaults/defaults.go`
 - 3-file cycle: `doc/example_split_test.go -> doc/merge_test.go -> doc/split_test.go -> doc/example_split_test.go`
 - 3-file cycle: `doc/example_split_test.go -> doc/split_test.go -> doc/merge_test.go -> doc/example_split_test.go`
+- 3-file cycle: `stream/dct/dct.go -> stream/fuzz_test.go -> stream/defaults/defaults.go -> stream/dct/dct.go`
+- 3-file cycle: `stream/crypt/crypt.go -> stream/fuzz_test.go -> stream/defaults/defaults.go -> stream/crypt/crypt.go`
+- 3-file cycle: `stream/ascii85/ascii85.go -> stream/fuzz_test.go -> stream/defaults/defaults.go -> stream/ascii85/ascii85.go`
+- 3-file cycle: `stream/defaults/defaults.go -> stream/jpx/jpx.go -> stream/fuzz_test.go -> stream/defaults/defaults.go`
+- 3-file cycle: `stream/ccitt/ccitt.go -> stream/fuzz_test.go -> stream/defaults/defaults.go -> stream/ccitt/ccitt.go`
+- 3-file cycle: `stream/defaults/defaults.go -> stream/jbig2/jbig2.go -> stream/fuzz_test.go -> stream/defaults/defaults.go`
+- 3-file cycle: `stream/defaults/defaults.go -> stream/flate/flate.go -> stream/fuzz_test.go -> stream/defaults/defaults.go`
+- 3-file cycle: `stream/asciihex/asciihex.go -> stream/fuzz_test.go -> stream/defaults/defaults.go -> stream/asciihex/asciihex.go`
+- 3-file cycle: `stream/defaults/defaults.go -> stream/lzw/lzw.go -> stream/fuzz_test.go -> stream/defaults/defaults.go`
+- 3-file cycle: `stream/defaults/defaults.go -> stream/runlength/runlength.go -> stream/fuzz_test.go -> stream/defaults/defaults.go`
 
-## Communities (110 total, 52 thin omitted)
+## Communities (141 total, 54 thin omitted)
 
-### Community 0 - "Ref"
-Cohesion: 0.10
-Nodes (43): floatFromObj(), Op, graphicRun, patchDoc, AcroForm, Action, Annotation, Boolean (+35 more)
-
-### Community 1 - "read_document_test.go"
+### Community 0 - "Page"
 Cohesion: 0.18
-Nodes (18): cleanup(), main(), cleanup(), main(), pdfFontFlags(), ContentReader, Document, embeddedFontObjects (+10 more)
+Nodes (37): emptyAppearance(), formXObject(), frameOps(), symbolAppearance(), AcroForm, Action, Annotation, Boolean (+29 more)
 
-### Community 2 - "io.ReaderAt"
-Cohesion: 0.05
-Nodes (40): ParserImpl, tokenizer, detectLinearization(), isLinearized(), DefaultReaderOptions(), normalizeReaderOptions(), ParseLimits, ParserMode (+32 more)
+### Community 1 - "pdf20_test.go"
+Cohesion: 0.23
+Nodes (20): cleanup(), cleanup(), Document, embeddedFontObjects, graphicRun, LayoutReader, orderedRun, Page (+12 more)
+
+### Community 2 - "syntax/impl/tokenizer.go"
+Cohesion: 0.23
+Nodes (9): tokenizer, hexByte(), hexVal(), isDelimiter(), isHex(), isWhitespace(), numberToken(), Token (+1 more)
 
 ### Community 3 - "Name"
-Cohesion: 0.04
-Nodes (13): attachWidgetToPage(), Support, OutlineItem, StructElem, StructTreeRoot, Array, Name, Entry (+5 more)
+Cohesion: 0.03
+Nodes (39): asciiFileName(), md5sum(), collectionItem(), buttonAppearance(), fontResources(), num(), pdfLiteral(), textFieldAppearance() (+31 more)
 
-### Community 4 - "Color"
-Cohesion: 0.08
+### Community 4 - "DocumentBuilder"
+Cohesion: 0.03
+Nodes (19): annotBuilder, DocumentBuilder, documentPart, Support, FormBuilder, ImageBuilder, MetadataBuilder, OutlineBuilder (+11 more)
+
+### Community 5 - "Op"
+Cohesion: 0.06
+Nodes (78): Op, Parser, balancedMarkedContent(), ColorRGB, contentSource, abs64(), appendBoundary(), appendTextArg() (+70 more)
+
+### Community 6 - "Object"
+Cohesion: 0.03
+Nodes (30): isPageTreeNode(), ObjectEditor, patchDoc, checkPDFAFont(), resolveBuilt(), walkBuilt(), checkHeadingLevels(), clip() (+22 more)
+
+### Community 7 - "Color"
+Cohesion: 0.06
 Nodes (13): circlePathOps(), ellipsePathOps(), polygonPathOps(), roundedRectPathOps(), fillColorOps(), strokeStateOps(), PathBuilder, ColorFromHex() (+5 more)
 
-### Community 5 - "contentSource"
-Cohesion: 0.08
-Nodes (47): Parser, ColorRGB, contentSource, abs64(), appendBoundary(), appendTextArg(), extractTextFromOps(), extractTextFromXObject() (+39 more)
-
-### Community 6 - "LineStyle"
+### Community 8 - "New"
 Cohesion: 0.07
-Nodes (11): addGraphicRunWithState(), circlePathOps(), ellipsePathOps(), fillColorOps(), polygonPathOps(), roundedRectPathOps(), strokeStateOps(), LineStyle (+3 more)
+Nodes (72): main(), main(), main(), createLogo(), main(), New(), DefaultStandardSubstitutes(), TestDrawImage() (+64 more)
 
-### Community 7 - "PageAccess"
-Cohesion: 0.09
-Nodes (10): PageAccess, alignLine(), countWordSpaces(), defaultFont(), fontWidthFunc(), measureText(), NewDrawer(), wrapLines() (+2 more)
-
-### Community 8 - "Dict"
-Cohesion: 0.06
-Nodes (32): GraphicRun, ImageRun, TextRun, Page, CatalogReader, Support, Dict, buildLinearizationInfo() (+24 more)
-
-### Community 9 - "DocumentBuilder"
+### Community 9 - "Ref"
 Cohesion: 0.05
-Nodes (5): DocumentBuilder, ImageBuilder, PageBuilder, TaggedContentBuilder, TaggedImageBuilder
+Nodes (10): resolver, Ref, cryptFilterName(), documentCore, ObjectResolver, TestExtractFromObjectStreamChecksObjectNumber(), CryptFilterDecryptor, cryptMethod (+2 more)
 
 ### Community 10 - "testing.T"
-Cohesion: 0.11
-Nodes (39): NewStreamParser(), TestStreamParser_ImplementsInterface(), TestStreamParser_InlineImage(), TestStreamParser_LineContinuation(), TestStreamParser_OctalEscape(), TestStreamParser_OperandTypes(), TestStreamParser_Parse(), TestTable_CellLookup() (+31 more)
-
-### Community 11 - "TextBoxObject"
 Cohesion: 0.06
-Nodes (7): At(), HeadingObject, LineObject, Pt, TextAlignment, TextBoxObject, TextObject
+Nodes (65): TestStreamParser_ImplementsInterface(), NewRichText(), DefaultTextStyle(), TestTable_CellLookup(), baseEncoding(), TestEncodingTablesComplete(), sample(), TestDecodeEarlyChangeZeroMatchesStdlib() (+57 more)
 
-### Community 12 - "Drawer"
+### Community 11 - "LineStyle"
+Cohesion: 0.08
+Nodes (14): addGraphicRunWithState(), circlePathOps(), ellipsePathOps(), fillColorOps(), NewDrawer(), polygonPathOps(), roundedRectPathOps(), strokeStateOps() (+6 more)
+
+### Community 12 - "PageAccess"
+Cohesion: 0.09
+Nodes (11): PageAccess, alignLine(), countWordSpaces(), defaultFont(), fontWidthFunc(), measureText(), NewDrawer(), wrapLines() (+3 more)
+
+### Community 13 - "ITableBuilder"
+Cohesion: 0.07
+Nodes (11): cellLayout, ITableBuilder, ImageSide, ImageWrap, computeImageDimensions(), CellImageSpec, TableBuilder, TableBuilderAPI (+3 more)
+
+### Community 14 - "io.Writer"
+Cohesion: 0.07
+Nodes (15): Filter, Filter, Filter, Filter, Filter, Filter, Filter, Filter (+7 more)
+
+### Community 15 - "Integer"
+Cohesion: 0.06
+Nodes (31): TestParseStrayDelimiterTerminates(), NewStreamParser(), TestStreamParser_InlineImage(), TestStreamParser_LineContinuation(), TestStreamParser_OctalEscape(), TestStreamParser_OperandTypes(), TestStreamParser_Parse(), buildToUnicodeCMap() (+23 more)
+
+### Community 16 - "go_pkg_io"
+Cohesion: 0.21
+Nodes (13): NewFilter(), NewFilter(), NewFilter(), NewFilter(), NewFilter(), RegisterStandardFilters(), Filter, NewFilter() (+5 more)
+
+### Community 17 - "Open"
+Cohesion: 0.07
+Nodes (41): main(), createDummyPDF(), main(), openFromURL(), main(), main(), main(), main() (+33 more)
+
+### Community 18 - ".layoutTextIntoPages"
+Cohesion: 0.08
+Nodes (14): countWordSpaces(), extraSpacing(), reverseRunes(), fontSegment, RichText, RichTextSegment, FontWidthFunc, LineRectFunc (+6 more)
+
+### Community 19 - "TextBoxObject"
+Cohesion: 0.05
+Nodes (7): At(), HeadingObject, ImageObject, Pt, TextAlignment, TextBoxObject, TextObject
+
+### Community 20 - "pdftest.go"
+Cohesion: 0.09
+Nodes (30): Flate(), Builder, New(), PNGUp(), obj, fuzzSeeds(), contentOf(), onePageWithContentObj() (+22 more)
+
+### Community 21 - "FlowBuilder"
 Cohesion: 0.10
-Nodes (8): defaultBPC(), defaultColorSpace(), lastPage(), NewDrawer(), DecodePNGToRaw(), HasAlpha(), Figure, Drawer
+Nodes (9): FloatingImage, FlowBuilder, FlowOptions, DefaultImageLayout(), DefaultImageStyle(), ImageLayout, ImageStyle, Align (+1 more)
 
-### Community 13 - "extractBlocksFromOps"
-Cohesion: 0.12
-Nodes (31): bytesToInt(), decodeCMapString(), decodeHexString(), decodeRawTextBytes(), decodeTextBytes(), decodeUTF16BE(), decodeWinAnsi(), intToBytes() (+23 more)
+### Community 22 - "gPDF — architecture map"
+Cohesion: 0.09
+Nodes (19): newImageOpsWriter(), imageOpsWriter, BuildXMP(), writePDFUAExtensionSchema(), pageSpec, PDFUALevel, SRGBICCProfile(), encodeTextStrings() (+11 more)
 
-### Community 14 - "steps"
+### Community 23 - "Font"
+Cohesion: 0.08
+Nodes (8): aliasedFont, newEmbeddedFontUsage(), getRuneBlock(), reverseGlyphs(), fontConfig, Font, Shaper, Run
+
+### Community 24 - "pdfDocument"
+Cohesion: 0.09
+Nodes (6): String, mergeInherited(), outlineItemFirstRef(), MetadataProvider, pdfDocument, intFromModelObj()
+
+### Community 25 - "Drawer"
+Cohesion: 0.11
+Nodes (6): defaultBPC(), defaultColorSpace(), lastPage(), NewDrawer(), Figure, Drawer
+
+### Community 26 - "steps"
 Cohesion: 0.06
 Nodes (33): name, permissions, runs-on, steps, strategy, build-mode, language, jobs (+25 more)
 
-### Community 15 - "TableBuilder"
-Cohesion: 0.12
-Nodes (9): cellLayout, ImageSide, ImageWrap, computeImageDimensions(), CellImageSpec, TableBuilder, TableCellImageSpec, TableCellSpec (+1 more)
-
-### Community 16 - "go_pkg_io"
-Cohesion: 0.19
-Nodes (13): NewFilter(), NewFilter(), NewFilter(), NewFilter(), NewFilter(), RegisterStandardFilters(), Filter, NewFilter() (+5 more)
-
-### Community 17 - "io.Reader"
-Cohesion: 0.09
-Nodes (9): Filter, Filter, Filter, Filter, Filter, Filter, Filter, Filter (+1 more)
-
-### Community 18 - "Integer"
-Cohesion: 0.09
-Nodes (16): buildToUnicodeCMap(), buildToUnicodeSymbolCMap(), buildToUnicodeWinAnsiCMap(), buildToUnicodeZapfDingbatsCMap(), copyPageDict(), buildCIDWidthArray(), buildEmbeddedFontObjects(), fontBBoxArray() (+8 more)
-
-### Community 19 - "FlowBuilder"
-Cohesion: 0.15
-Nodes (4): FloatingImage, FlowBuilder, FlowOptions, Align
-
-### Community 20 - "io.Writer"
-Cohesion: 0.21
-Nodes (4): BuildAES256EncryptDictForWrite(), Encryptor, PDFWriter, escapeName()
-
-### Community 21 - "pdfDocument"
-Cohesion: 0.10
-Nodes (5): String, mergeInherited(), outlineItemFirstRef(), MetadataProvider, pdfDocument
-
-### Community 22 - "layout.go"
-Cohesion: 0.11
-Nodes (9): countWordSpaces(), ApproxWidth(), FontWidthFunc, LineRectFunc, LineWidthFunc, WrapLines(), WrapLinesDynamic(), WrapLinesRect() (+1 more)
-
-### Community 23 - "FilterRegistry"
-Cohesion: 0.10
-Nodes (18): boundedWriter, TestApplyFiltersWithLimitsRejectsOversizedDecode(), applyFilters(), applyFiltersWithLimits(), decodeStreamData(), decodeStreamDataWithLimits(), newBoundedWriter(), NewStandardRegistry() (+10 more)
-
-### Community 25 - "New"
+### Community 27 - "ReplacesContent"
 Cohesion: 0.07
-Nodes (27): main(), main(), main(), createLogo(), main(), NewDrawer(), New(), R() (+19 more)
+Nodes (23): ExtractText(), ExtractTextPerPage(), TestExtractText_DecodesTextUsingToUnicodeCMap(), TestExtractText_HandlesQuoteTextOperators(), TestExtractText_InsertsBoundaryBetweenTextBlocks(), TestExtractText_InsertsSpaceForTJKerningAdjustments(), TestExtractText_PreservesLineBoundariesForTextPositionOperators(), TestExtractText_ReadsDirectPageContentStreams() (+15 more)
 
-### Community 26 - "contentTokenizer"
-Cohesion: 0.22
+### Community 28 - "validation.go"
+Cohesion: 0.11
+Nodes (22): candidateRow, clusterAnchors(), DetectTables(), detectTablesOnPage(), extractTableFromGroup(), inferTableBorder(), nearestAnchor(), TestDetectTables_DetectsSimpleGrid() (+14 more)
+
+### Community 29 - "builtDocument"
+Cohesion: 0.09
+Nodes (8): builtDocument, newObjectCloner(), ImageReader, objectCloner, copyInfo(), copyPages(), newPageTree(), ImageInfo
+
+### Community 30 - "with"
+Cohesion: 0.06
+Nodes (30): runs-on, steps, strategy, default, description, fuzztime, jobs, fuzz (+22 more)
+
+### Community 31 - "cms.go"
+Cohesion: 0.16
+Nodes (20): algorithmIdentifier, attribute, digestOID(), explicit0(), hashFromOID(), parseCertificateSet(), parseCMS(), pick() (+12 more)
+
+### Community 32 - ".writeEncrypted"
+Cohesion: 0.11
+Nodes (18): HexString, BuildEncryptDictForWrite(), headerFor(), generationProvider, validateDocumentGraph(), validateDocumentGraphWithOptions(), validateIncrementalDocumentGraph(), validateObjectRefs() (+10 more)
+
+### Community 33 - "io.ReaderAt"
+Cohesion: 0.15
+Nodes (14): PDFReader, decodeXRefStreamEntry(), findLastXRefOffset(), findStartXRef(), parseStartXRefOffset(), readBEField(), repairResult, readScanChunk() (+6 more)
+
+### Community 34 - "contentTokenizer"
+Cohesion: 0.21
 Nodes (9): hexByte(), hexVal(), isHexChar(), isSpace(), newContentTokenizer(), contentTokenizer, ctoken, ctokenKind (+1 more)
 
-### Community 27 - ".layoutTextIntoPages"
-Cohesion: 0.12
-Nodes (9): symbolEncode(), winAnsiEncode(), zapfDingbatsEncode(), reverseRunes(), toFloat(), pageConfig, pageSpec, TextLayoutOptions (+1 more)
+### Community 35 - "parser.go"
+Cohesion: 0.13
+Nodes (9): parseFaces(), registerPaths(), loadFont(), exercise(), FuzzParse(), decodeUTF16BE(), Parse(), parseAtOffset() (+1 more)
 
-### Community 29 - "ExtractText"
+### Community 36 - "NewStandardDecryptor"
+Cohesion: 0.13
+Nodes (24): Decryptor, ValidatePerms(), getBytes(), getIDBytes(), getInt(), authenticateLegacy(), checkUser(), computeFileKey() (+16 more)
+
+### Community 37 - "Document"
 Cohesion: 0.10
-Nodes (16): ExtractText(), TestExtractText_DecodesTextUsingToUnicodeCMap(), TestExtractText_HandlesQuoteTextOperators(), TestExtractText_InsertsBoundaryBetweenTextBlocks(), TestExtractText_InsertsSpaceForTJKerningAdjustments(), TestExtractText_ReadsDirectPageContentStreams(), TestExtractText_TraversesFormXObjects(), makeReplaceStub() (+8 more)
+Nodes (14): dictInt(), floatFromObj(), main(), openPDF(), printDocumentInfo(), printMetadata(), printPages(), printSearch() (+6 more)
 
-### Community 30 - "builtDocument"
+### Community 38 - "buildEmbeddedFontObjects"
 Cohesion: 0.12
-Nodes (5): builtDocument, newObjectCloner(), ImageReader, objectCloner, ImageInfo
+Nodes (17): shapedTextArg(), symbolEncode(), winAnsiEncode(), zapfDingbatsEncode(), buildCIDSet(), buildCIDWidthArray(), buildEmbeddedFontObjects(), fontBBoxArray() (+9 more)
 
-### Community 31 - "NewPDFReader"
-Cohesion: 0.12
-Nodes (21): TestStrictModeRejectsMissingStartXRef(), TestTolerantModeRecoversMissingStartXRef(), TestValidateDocumentReportsStructuralStatus(), TestValidateRejectsInvalidLevel(), NewPDFReader(), NewPDFReaderWithOptions(), minimalPDFBytes(), safeByte() (+13 more)
+### Community 39 - "structWalker"
+Cohesion: 0.17
+Nodes (10): ExtractStructuredText(), ExtractTextInReadingOrder(), TextElement, isCellRole(), JoinTextElements(), layoutOrderText(), nameOf(), structureTreeText() (+2 more)
 
-### Community 32 - "Open"
-Cohesion: 0.15
-Nodes (18): main(), main(), main(), Open(), ExampleExtract(), ExampleSplit(), ExampleSplitEvery(), Extract() (+10 more)
+### Community 40 - "testing.B"
+Cohesion: 0.17
+Nodes (22): BenchmarkParseObject(), BenchmarkTokenizer(), TestTokenizerCommentAdvancesOffset(), TestTokenizerStrayDelimitersMakeProgress(), NewTokenizer(), TestTokenizer_CurrentOffset_AfterTokens(), benchBuilder(), benchDocument() (+14 more)
 
-### Community 33 - "ListObject"
+### Community 41 - "writer/options.go"
+Cohesion: 0.13
+Nodes (18): TestApplyFiltersWithLimitsRejectsOversizedDecode(), applyFilters(), applyFiltersWithLimits(), decodeStreamData(), decodeStreamDataWithLimits(), NewStandardRegistry(), FilterRegistry, NewRegistry() (+10 more)
+
+### Community 42 - "NewPDFReader"
+Cohesion: 0.11
+Nodes (23): TestStrictModeRejectsMissingStartXRef(), TestTolerantModeRecoversMissingStartXRef(), TestValidateDocumentReportsStructuralStatus(), TestValidateRejectsInvalidLevel(), NewPDFReader(), NewPDFReaderWithOptions(), minimalPDFBytes(), safeByte() (+15 more)
+
+### Community 43 - "OpenReaderWithPassword"
+Cohesion: 0.10
+Nodes (20): sample, OpenReaderWithPassword(), DecodeTextString(), TestDecodePDFDocEncoding(), basic(), corpus(), corpusDir(), reopen() (+12 more)
+
+### Community 44 - "EmbeddableFont"
+Cohesion: 0.13
+Nodes (10): embeddedProgramName(), EmbeddableFont, DefaultFallback(), fileScore(), NewFallback(), GetDefaultScanner(), StandardSubstitutes(), Fallback (+2 more)
+
+### Community 45 - ".setErr"
+Cohesion: 0.16
+Nodes (4): decodeImageFile(), jpegColorComponents(), ImageCompression, ImageOptions
+
+### Community 46 - "steps"
+Cohesion: 0.09
+Nodes (21): env, GPDF_REQUIRE_TOOLS, VERAPDF_SHA256, VERAPDF_VERSION, jobs, test, name, on (+13 more)
+
+### Community 48 - "Registry"
+Cohesion: 0.14
+Nodes (6): memoryRegistry, Registry, scanDir(), LinuxScanner, MacOSScanner, WindowsScanner
+
+### Community 49 - "version_detector.go"
+Cohesion: 0.14
+Nodes (7): CatalogProvider, PDFVersion, defaultVersion(), detectPDFVersion(), digitAt(), parseVersionHeader(), parseVersionName()
+
+### Community 50 - "ListObject"
 Cohesion: 0.12
 Nodes (5): toRoman(), ListObject, DefaultListStyle(), ListMarker, ListStyle
 
-### Community 34 - "ExtractLayout"
-Cohesion: 0.14
-Nodes (16): ExtractImages(), ExtractLayout(), makePageWithContent(), TestExtractImages_ReturnsImageMetadata(), TestExtractImages_SkipsFormXObjects(), TestExtractImages_TracksPlacementFromCTM(), TestExtractImagesPerPage_GroupsByPage(), TestExtractLayout_CapturesPositionAndStyle() (+8 more)
+### Community 51 - "bidi.go"
+Cohesion: 0.19
+Nodes (16): TextDirection, BaseDirection(), classify(), Direction, isArabicLetterScript(), IsRTL(), Levels(), Mirror() (+8 more)
 
-### Community 35 - "ExtractTextPerPage"
+### Community 52 - "Decode"
+Cohesion: 0.19
+Nodes (15): Encode(), encodePNG(), encodeTIFF(), pngFilter(), sign(), Decode(), decodePNG(), decodeTIFF() (+7 more)
+
+### Community 53 - "Font"
+Cohesion: 0.13
+Nodes (3): Font, GSUB, tableRecord
+
+### Community 54 - "scanner.go"
 Cohesion: 0.12
-Nodes (11): ContentSearcher, SearchResult, ExtractTextPerPage(), SearchPages(), TestExtractText_PreservesLineBoundariesForTextPositionOperators(), TestExtractTextPerPage_EmptyPageYieldsEmptyString(), TestExtractTextPerPage_ReturnsOneEntryPerPage(), TestSearchPages_EmptyKeyword() (+3 more)
+Nodes (10): CFFFont, GlyphEncoder, Metrics, allScriptFeatures(), featureLookups(), parseCoverageTable(), parseGSUBType1(), scriptFeatures() (+2 more)
 
-### Community 37 - "fontConfig"
-Cohesion: 0.14
-Nodes (6): newEmbeddedFontUsage(), embeddedFontUsage, getRuneBlock(), fontConfig, fontSegment, EmbeddableFont
+### Community 55 - "Sign"
+Cohesion: 0.31
+Nodes (6): subjectName(), Sign(), SignFile(), Signer, SignOptions, SubFilter
 
-### Community 38 - ".ImageWithLayout"
-Cohesion: 0.12
-Nodes (9): DetectDimensions(), ProcessImage(), ImageObject, DefaultImageLayout(), DefaultImageStyle(), ImageLayout, ImageStyle, ImageInfo (+1 more)
+### Community 56 - "Verify"
+Cohesion: 0.19
+Nodes (15): NewCMSSigner(), popplerSig(), samplePDF(), testCert(), TestSecondSignatureKeepsFirstValid(), TestSignAndVerify(), TestTimestampAndValidationData(), SignatureInfo (+7 more)
 
-### Community 39 - "TextStyle"
-Cohesion: 0.12
-Nodes (6): NewRichText(), RichText, RichTextSegment, DefaultTextStyle(), TextStyle, TestRichText()
-
-### Community 40 - "validation.go"
-Cohesion: 0.26
-Nodes (11): appendValidationError(), appendValidationWarn(), isValidationLevel(), validationError(), validationErrorOrNil(), validationWarn(), ValidationDiagnostic, ValidationLevel (+3 more)
-
-### Community 42 - "extract_tables.go"
+### Community 57 - "decode.go"
 Cohesion: 0.20
-Nodes (11): candidateRow, clusterAnchors(), DetectTables(), detectTablesOnPage(), extractTableFromGroup(), inferTableBorder(), nearestAnchor(), TestDetectTables_DetectsSimpleGrid() (+3 more)
+Nodes (12): DecodePNG(), DecodePNGToRaw(), DetectDimensions(), HasAlpha(), isGrayImage(), nrgbaAt(), ProcessImage(), Decoded (+4 more)
 
-### Community 46 - "standardR4Decryptor"
-Cohesion: 0.22
-Nodes (5): pkcs7Unpad(), aes256Decryptor, r4Method, resolveCFMethod(), standardR4Decryptor
+### Community 58 - "steps"
+Cohesion: 0.11
+Nodes (17): runs-on, steps, jobs, bench, name, on, pull_request, workflow_dispatch (+9 more)
 
-### Community 47 - "Document"
-Cohesion: 0.20
-Nodes (11): dictInt(), main(), openPDF(), printDocumentInfo(), printMetadata(), printPages(), printSearch(), printTextPerPage() (+3 more)
+### Community 59 - "applyFilterChain"
+Cohesion: 0.13
+Nodes (14): codeRange, addBFRange(), bytesToInt(), decodeCMapString(), decodeRawTextBytes(), decodeUTF16BE(), decodeWinAnsi(), intToBytes() (+6 more)
 
-### Community 48 - "Support"
+### Community 60 - "Features"
 Cohesion: 0.15
-Nodes (9): inSection(), StructRow, Block, List, ListItem, Section, StructCell, StructTable (+1 more)
+Nodes (9): Redact(), RedactArea, RedactOptions, RedactionReport, Features, Critical / high, gPDF — deep review findings (2026-10-31, commit 036d17f; fixes 2026-10-31 on branch claude/project-thread-tv91nd), Repo / process (+1 more)
 
-### Community 50 - "runlength.go"
+### Community 61 - "shape_test.go"
+Cohesion: 0.19
+Nodes (13): cffIndex(), cffIndexCount(), cffString(), parseCFFCharset(), parseCFFDict(), loadFont(), TestCFFDictAndCharset(), TestParseCFF() (+5 more)
+
+### Community 63 - "PDFWriter"
+Cohesion: 0.29
+Nodes (5): Encryptor, errWriter, asErrWriter(), escapeName(), PDFWriter
+
+### Community 64 - "Support"
+Cohesion: 0.17
+Nodes (9): StructRow, ElemKind, ElemRef, List, ListItem, Section, StructCell, StructTable (+1 more)
+
+### Community 65 - "packer"
+Cohesion: 0.29
+Nodes (5): objectGroup, packable(), offsetWriter, packer, xrefEntry
+
+### Community 67 - "imageRun"
+Cohesion: 0.19
+Nodes (8): jpegHasAdobeMarker(), components(), decodeJPEGToRaw(), downsampleRun(), encodeJPEG(), placedSize(), resampleBox(), imageRun
+
+### Community 68 - "arabic.go"
+Cohesion: 0.25
+Nodes (10): ArabicForms(), IsArabicLetter(), JoiningTypeOf(), LamAlefLigature(), PresentationForm(), TestJoiningTypes(), TestPresentationForms(), nextBase() (+2 more)
+
+### Community 69 - "EncodeBytes"
+Cohesion: 0.23
+Nodes (8): EncodeBytes(), escapeContentName(), NewEncoder(), sortedKeys(), TestEncodeBytes(), writeHexString(), writeLiteralString(), Encoder
+
+### Community 70 - "SearchPages"
+Cohesion: 0.18
+Nodes (7): ContentSearcher, SearchResult, SearchPages(), TestSearchPages_EmptyKeyword(), TestSearchPages_FindsKeywordOnCorrectPage(), TestSearchPages_MultipleKeywords(), TestSearchPages_RecordsIndices()
+
+### Community 72 - "runlength.go"
 Cohesion: 0.31
 Nodes (9): Filter, canEncodeRepeatRun(), copyLiteralRun(), copyRepeatedRun(), decode(), decodeLiteral(), encode(), writeLiteralRun() (+1 more)
 
-### Community 53 - "EncodeBytes"
+### Community 73 - "time.Time"
 Cohesion: 0.24
-Nodes (7): EncodeBytes(), escapeContentName(), NewEncoder(), TestEncodeBytes(), writeHexString(), writeLiteralString(), Encoder
+Nodes (7): Attachment, FileRelationship, PDFDate(), FormatDate(), ParseDate(), FuzzParseDate(), TestParseDate()
 
-### Community 54 - "scanner.go"
-Cohesion: 0.24
-Nodes (4): GetDefaultScanner(), tableChecksum(), FontScanner, GSUB
+### Community 76 - "Usage"
+Cohesion: 0.17
+Nodes (11): Extracting Pages, gPDF, Merging from Remote Sources (URL/S3), Merging PDFs, Reading a PDF, Reading order, updating in place, redacting, Searching and Replacing, Splitting PDFs (+3 more)
 
-### Community 55 - "Signer"
-Cohesion: 0.31
-Nodes (4): Sign(), SignFile(), Signer, SignOptions
+### Community 77 - "buildSignatureUpdate"
+Cohesion: 0.27
+Nodes (8): AddValidationData(), buildSignatureUpdate(), copyDict(), docMDPLevel(), resolveArray(), resolveDict(), update, ValidationData
 
-### Community 56 - "version_detector.go"
-Cohesion: 0.29
-Nodes (5): PDFVersion, defaultVersion(), detectPDFVersion(), digitAt(), parseVersionHeader()
-
-### Community 57 - "Usage"
-Cohesion: 0.18
-Nodes (10): Extracting Pages, Features, gPDF, Merging from Remote Sources (URL/S3), Merging PDFs, Reading a PDF, Searching and Replacing, Splitting PDFs (+2 more)
-
-### Community 59 - "Handle"
+### Community 78 - "Handle"
 Cohesion: 0.22
 Nodes (4): Handle, Support, LayerBuilder, Spec
 
-### Community 60 - "Table"
-Cohesion: 0.20
-Nodes (3): LayoutReader, Table, TableCell
+### Community 79 - "PageText"
+Cohesion: 0.33
+Nodes (3): PageDecorator, PageText, TextAlign
 
-### Community 61 - ".Scan"
-Cohesion: 0.27
-Nodes (4): scanDir(), LinuxScanner, MacOSScanner, WindowsScanner
-
-### Community 63 - "OpenReaderWithPassword"
-Cohesion: 0.36
-Nodes (7): createDummyPDF(), main(), openFromURL(), OpenReader(), OpenReaderWithPassword(), OpenWithPassword(), TestOpenWithPassword_Empty()
-
-### Community 65 - "parser.go"
+### Community 80 - "Page"
 Cohesion: 0.39
-Nodes (6): registerPaths(), decodeUTF16BE(), Parse(), parseAtOffset(), ParseCollection(), tableRecord
+Nodes (4): GraphicRun, ImageRun, TextRun, Page
 
-### Community 72 - "pagesize.go"
+### Community 81 - "appearanceStream"
+Cohesion: 0.22
+Nodes (7): rectArray(), GeoViewport, Model3D, FormatReal(), appearanceStream(), escapeLiteral(), FormatReal()
+
+### Community 84 - "TextBlock"
+Cohesion: 0.33
+Nodes (7): InferImageLayouts(), medianHeight(), OrderBlocks(), regionParagraphs(), splitAtGap(), xyCut(), TextBlock
+
+### Community 85 - "ReaderOptions"
+Cohesion: 0.31
+Nodes (8): DefaultReaderOptions(), normalizeReaderOptions(), ParseLimits, ParserMode, NewPDFReaderWithFilters(), NewPDFReaderWithFiltersAndOptions(), ReaderOptions, gPDF — code style and conventions
+
+### Community 86 - "saslprep.go"
+Cohesion: 0.44
+Nodes (8): checkBidi(), isLCat(), isMappedToNothing(), isNonASCIISpace(), isProhibited(), isRandAL(), saslprep(), TestSASLprep()
+
+### Community 87 - "project.yml"
+Cohesion: 0.22
+Nodes (8): encoding, excluded_tools, ignore_all_files_in_gitignore, ignored_paths, initial_prompt, languages, project_name, read_only
+
+### Community 90 - "BuildAES256EncryptDictForWriteWithRandom"
+Cohesion: 0.32
+Nodes (8): aes256Password(), aesNoPadIV(), authenticateAES256(), hashR6(), aesNoPad(), TestHashR6Deterministic(), BuildAES256EncryptDictForWrite(), BuildAES256EncryptDictForWriteWithRandom()
+
+### Community 91 - ".hintTables"
+Cohesion: 0.36
+Nodes (4): contentInfo, bitWriter, hintTableSet, bitsFor()
+
+### Community 93 - "RectObject"
+Cohesion: 0.33
+Nodes (3): R(), Rect, RectObject
+
+### Community 96 - "CollectionOptions"
 Cohesion: 0.40
-Nodes (3): Custom(), Size, TestPageSizeAPI()
+Nodes (4): CollectionField, CollectionFieldType, CollectionOptions, CollectionView
 
-### Community 75 - "CellStyle"
+### Community 99 - "objHeaderBefore"
+Cohesion: 0.60
+Nodes (5): isPDFWhitespace(), isDigit(), isRegular(), objHeaderBefore(), scanChunk()
+
+### Community 100 - "CellStyle"
 Cohesion: 0.40
 Nodes (3): CellHorizontalAlign, CellStyle, CellVerticalAlign
 
-### Community 77 - "ICCProfile"
+### Community 101 - "TestSaveLinearizedWritesUsableHintTables"
 Cohesion: 0.50
-Nodes (3): NewICCProfile(), SRGBProfile(), ICCProfile
-
-### Community 82 - "validateDocumentGraph"
-Cohesion: 0.83
-Nodes (3): validateDocumentGraph(), validateDocumentGraphWithOptions(), validateIncrementalDocumentGraph()
-
-### Community 84 - "Support"
-Cohesion: 0.67
-Nodes (3): Support, FieldKind, FieldSpec
+Nodes (3): linValue(), TestSaveLinearizedWritesUsableHintTables(), bitReader
 
 ## Knowledge Gaps
 - **1 isolated node(s):** `github.com/gsoultan/gpdf`
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 319 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **52 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 442 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **54 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `DocumentBuilder` connect `DocumentBuilder` to `read_document_test.go`, `Name`, `Color`, `LineStyle`, `PageAccess`, `Dict`, `testing.T`, `Drawer`, `TableBuilder`, `FlowBuilder`, `New`, `.layoutTextIntoPages`, `ITableBuilder`, `fontConfig`, `.ImageWithLayout`, `Font`, `.ApplyPageSize`, `.addImageRun`, `Support`, `Handle`, `MetadataBuilder`, `OutlineBuilder`, `FormBuilder`, `TextBuilder`, `.getEffectiveStyle`, `ICCProfile`, `Support`, `.CurrentPage`?**
-  _High betweenness centrality (0.127) - this node is a cross-community bridge._
-- **Are the 39 inferred relationships involving `Name` (e.g. with `.Fields()` and `.SigFlags()`) actually correct?**
-  _`Name` has 39 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Name` connect `Name` to `Page`, `Op`, `Object`, `Color`, `New`, `Ref`, `testing.T`, `LineStyle`, `ITableBuilder`, `io.Writer`, `Integer`, `Open`, `.layoutTextIntoPages`, `TextBoxObject`, `pdftest.go`, `FlowBuilder`, `gPDF — architecture map`, `pdfDocument`, `ReplacesContent`, `validation.go`, `builtDocument`, `.writeEncrypted`, `io.ReaderAt`, `contentTokenizer`, `NewStandardDecryptor`, `Document`, `buildEmbeddedFontObjects`, `structWalker`, `writer/options.go`, `NewPDFReader`, `OpenReaderWithPassword`, `Sign`, `Verify`, `decode.go`, `applyFilterChain`, `ParserImpl`, `PDFWriter`, `Support`, `packer`, `TaggingAccess`, `imageRun`, `EncodeBytes`, `StreamWriter`, `buildSignatureUpdate`, `Handle`, `Page`, `appearanceStream`, `BuildAES256EncryptDictForWriteWithRandom`, `.hintTables`, `pageConfig`, `TestSaveLinearizedWritesUsableHintTables`?**
+  _High betweenness centrality (0.092) - this node is a cross-community bridge._
+- **Are the 44 inferred relationships involving `Name` (e.g. with `.Fields()` and `.SigFlags()`) actually correct?**
+  _`Name` has 44 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `github.com/gsoultan/gpdf` to the rest of the system?**
   _1 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Ref` be split into smaller, more focused modules?**
-  _Cohesion score 0.10485324033711131 - nodes in this community are weakly interconnected._
-- **Why does `Name` connect `Name` to `Ref`, `read_document_test.go`, `io.ReaderAt`, `Color`, `contentSource`, `LineStyle`, `Dict`, `testing.T`, `TextBoxObject`, `extractBlocksFromOps`, `TableBuilder`, `Integer`, `FlowBuilder`, `io.Writer`, `pdfDocument`, `FilterRegistry`, `New`, `contentTokenizer`, `.layoutTextIntoPages`, `ExtractText`, `builtDocument`, `NewPDFReader`, `Open`, `ExtractLayout`, `ExtractTextPerPage`, `validation.go`, `TaggingAccess`, `standardR4Decryptor`, `Document`, `Support`, `.WriteLinearized`, `EncodeBytes`, `Handle`?**
-  _High betweenness centrality (0.090) - this node is a cross-community bridge._
-- **Should `io.ReaderAt` be split into smaller, more focused modules?**
-  _Cohesion score 0.050883898709985664 - nodes in this community are weakly interconnected._
-- **Why does `PageAccess` connect `PageAccess` to `Ref`, `Color`, `LineStyle`, `Font`, `Drawer`?**
-  _High betweenness centrality (0.066) - this node is a cross-community bridge._
+- **Should `Name` be split into smaller, more focused modules?**
+  _Cohesion score 0.031692406692406694 - nodes in this community are weakly interconnected._
+- **Why does `DocumentBuilder` connect `DocumentBuilder` to `pdf20_test.go`, `Name`, `Color`, `New`, `testing.T`, `LineStyle`, `PageAccess`, `ITableBuilder`, `TextBoxObject`, `pdftest.go`, `FlowBuilder`, `gPDF — architecture map`, `Font`, `Drawer`, `testing.B`, `OpenReaderWithPassword`, `EmbeddableFont`, `.setErr`, `.ApplyPageSize`, `bidi.go`, `Features`, `Support`, `StreamWriter`, `time.Time`, `Handle`, `PageText`, `PDFALevel`, `CollectionOptions`, `pageConfig`?**
+  _High betweenness centrality (0.092) - this node is a cross-community bridge._
+- **Should `DocumentBuilder` be split into smaller, more focused modules?**
+  _Cohesion score 0.028035456606885178 - nodes in this community are weakly interconnected._
+- **Why does `Page` connect `pdf20_test.go` to `Page`, `DocumentBuilder`, `Object`, `time.Time`, `Ref`, `LineStyle`, `appearanceStream`, `ListObject`, `TextBoxObject`, `FlowBuilder`, `decode.go`, `RectObject`?**
+  _High betweenness centrality (0.079) - this node is a cross-community bridge._

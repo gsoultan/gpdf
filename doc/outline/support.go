@@ -17,6 +17,8 @@ type LinkAnnotation struct {
 	DestPage  int
 	DestName  string
 	URL       string
+	// Contents describes the link for assistive technology (/Contents); PDF/UA needs it.
+	Contents string
 }
 
 // Support owns outline, named-destination, and link-annotation state.
@@ -155,6 +157,9 @@ func (s *Support) BuildLinkAnnotations(objs map[int]model.Object, pageIndex int,
 			continue
 		}
 
+		if la.Contents != "" {
+			annotDict[model.Name("Contents")] = model.String(la.Contents)
+		}
 		annotNum := nextNum
 		nextNum++
 		objs[annotNum] = annotDict

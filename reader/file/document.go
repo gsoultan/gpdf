@@ -1,6 +1,8 @@
 package file
 
 import (
+	"errors"
+	"fmt"
 	"io"
 
 	"github.com/gsoultan/gpdf/model"
@@ -99,6 +101,144 @@ func (d *Document) ReadContent() (string, error) {
 func (d *Document) ReadContentPerPage() ([]string, error) {
 	return d.doc.ContentPerPage()
 }
+
+// ReadContentInReadingOrder returns the text in reading order (structure tree or
+// layout analysis).
+func (d *Document) ReadContentInReadingOrder() (string, error) {
+	return reader.ExtractTextInReadingOrder(d.doc)
+}
+
+// ReadStructuredText returns the reading-order text as elements with their role and page.
+func (d *Document) ReadStructuredText() ([]reader.TextElement, error) {
+	return reader.ExtractStructuredText(d.doc)
+}
+
+// changeTracker is what the reader document offers for incremental updates.
+type changeTracker interface {
+	Source() (io.ReaderAt, int64)
+	MarkModified(ref model.Ref, obj model.Object)
+	NewObject(obj model.Object) model.Ref
+	ModifiedObjects() map[model.Ref]model.Object
+	Redacted() bool
+	Generation(num int) int
+}
+
+// MarkModified records obj as the new value of ref: Save writes it, and
+// SaveIncremental appends it.
+func (d *Document) MarkModified(ref model.Ref, obj model.Object) {
+	if t, ok := d.doc.(changeTracker); ok {
+		t.MarkModified(ref, obj)
+	}
+}
+
+// SetObject replaces or adds the indirect object ref (see MarkModified).
+func (d *Document) SetObject(ref model.Ref, obj model.Object) { d.MarkModified(ref, obj) }
+
+// MarkRedacted records that content was removed, after which SaveIncremental is refused.
+func (d *Document) MarkRedacted() {
+	if t, ok := d.doc.(interface{ MarkRedacted() }); ok {
+		t.MarkRedacted()
+	}
+}
+
+// NewObject adds obj as a new indirect object and returns its reference.
+func (d *Document) NewObject(obj model.Object) model.Ref {
+	if t, ok := d.doc.(changeTracker); ok {
+		return t.NewObject(obj)
+	}
+	return model.Ref{}
+}
+
+// SetInfo sets one entry of the document information dictionary (creating the
+// dictionary when the file has none), for example "Title" or "Author".
+func (d *Document) SetInfo(key string, value model.Object) error {
+	t, ok := d.doc.(changeTracker)
+	if !ok {
+		return errors.New("document does not track changes")
+	}
+	trailer := d.doc.Trailer()
+	if ref := trailer.Info(); ref != nil {
+		obj, err := d.doc.Resolve(*ref)
+		if err != nil {
+			return err
+		}
+		info, _ := obj.(model.Dict)
+		updated := make(model.Dict, len(info)+1)
+		for k, v := range info {
+			updated[k] = v
+		}
+		updated[model.Name(key)] = value
+		t.MarkModified(*ref, updated)
+		return nil
+	}
+	ref := t.NewObject(model.Dict{model.Name(key): value})
+	trailer.Dict[model.Name("Info")] = ref
+	return nil
+}
+
+// incrementalUpdate is the object set appended by SaveIncremental.
+type incrementalUpdate struct {
+	objects map[int]model.Object
+	gens    map[int]int
+	trailer model.Trailer
+}
+
+func (u *incrementalUpdate) Trailer() model.Trailer { return u.trailer }
+func (u *incrementalUpdate) Generation(num int) int { return u.gens[num] }
+func (u *incrementalUpdate) Resolve(ref model.Ref) (model.Object, error) {
+	o, ok := u.objects[ref.ObjectNumber]
+	if !ok {
+		return nil, fmt.Errorf("object %d not in update", ref.ObjectNumber)
+	}
+	return o, nil
+}
+func (u *incrementalUpdate) ObjectNumbers() []int {
+	out := make([]int, 0, len(u.objects))
+	for n := range u.objects {
+		out = append(out, n)
+	}
+	return out
+}
+
+// SaveIncremental writes the original file bytes followed by an incremental
+// update holding the changed and added objects. With nothing changed, the file
+// is copied as it is.
+func (d *Document) SaveIncremental(w io.Writer) error {
+	t, ok := d.doc.(changeTracker)
+	if !ok {
+		return errors.New("document does not track changes")
+	}
+	if t.Redacted() {
+		return ErrRedacted
+	}
+	r, size := t.Source()
+	if r == nil {
+		return errors.New("document has no source file")
+	}
+	if _, err := io.Copy(w, io.NewSectionReader(r, 0, size)); err != nil {
+		return err
+	}
+	changed := t.ModifiedObjects()
+	if len(changed) == 0 {
+		return nil
+	}
+	u := &incrementalUpdate{objects: make(map[int]model.Object, len(changed)), gens: make(map[int]int, len(changed))}
+	for ref, obj := range changed {
+		u.objects[ref.ObjectNumber] = obj
+		u.gens[ref.ObjectNumber] = ref.Generation
+	}
+	base := d.doc.Trailer().Dict
+	u.trailer = model.Trailer{Dict: make(model.Dict, len(base))}
+	for k, v := range base {
+		u.trailer.Dict[k] = v
+	}
+	pw := writer.NewPDFWriterWithOptions(writer.WriterOptions{ValidateGraph: new(false)})
+	return pw.WriteIncremental(w, size, d.doc.StartXRefOffset(), u)
+}
+
+// ErrRedacted is returned by SaveIncremental after content was redacted: an
+// incremental update would keep the removed bytes in the file.
+var ErrRedacted = errors.New("redacted document must be saved with Save, not incrementally")
 
 // ReadImages returns metadata and raw bytes for all images across all pages.
 func (d *Document) ReadImages() ([]reader.ImageInfo, error) {

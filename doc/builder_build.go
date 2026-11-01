@@ -3,12 +3,21 @@ package doc
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/gsoultan/gpdf/model"
 )
 
-// Build returns a Document that can be saved. The document is in-memory.
+// Build returns a Document that can be saved. The document is in-memory; see
+// StreamTo and BuildTo for output that is written as it is built.
 func (b *DocumentBuilder) Build() (Document, error) {
+	if b.stream != nil {
+		return nil, fmt.Errorf("%w: a builder with StreamTo is completed with Finish", ErrStreaming)
+	}
+	return b.build()
+}
+
+func (b *DocumentBuilder) build() (*builtDocument, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -19,6 +28,14 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	b.prepareMetadata()
 	objs := make(map[int]model.Object)
 	nextNum := 1
+	if b.stream != nil {
+		// Numbers below this belong to the images already written.
+		sw, err := b.stream.writer(b)
+		if err != nil {
+			return nil, err
+		}
+		nextNum = sw.NextObjectNumber()
+	}
 
 	catalogNum := nextNum
 	nextNum++
@@ -105,10 +122,15 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	if b.metadata.Lang != "" {
 		catalogDict[model.Name("Lang")] = model.String(b.metadata.Lang)
 	}
+	if b.pdfua != "" {
+		// PDF/UA: viewers show the document title, not the file name.
+		catalogDict[model.Name("ViewerPreferences")] = model.Dict{model.Name("DisplayDocTitle"): model.Boolean(true)}
+	}
 
 	nextNum = b.buildCatalogExtras(objs, catalogDict, pageNums, nextNum)
 	nextNum = b.buildAttachments(objs, catalogDict, pageNums, nextNum)
 	nextNum = b.buildPageOutputIntents(objs, pageNums, nextNum)
+	nextNum = b.buildCollection(objs, catalogDict, nextNum)
 	if err := b.buildDocumentParts(objs, catalogDict, pageNums, nextNum); err != nil {
 		return nil, err
 	}
@@ -119,31 +141,40 @@ func (b *DocumentBuilder) Build() (Document, error) {
 
 	objs[catalogNum] = catalogDict
 
-	infoNum := nextNum
-	nextNum++
-	objs[infoNum] = b.metadata.BuildInfoDict()
-
-	nextNum = b.metadata.BuildMetadataStream(objs, catalogDict, nextNum)
-
 	trailer := model.Trailer{
 		Dict: model.Dict{
 			model.Name("Root"): model.Ref{ObjectNumber: catalogNum, Generation: 0},
-			model.Name("Size"): model.Integer(nextNum),
-			model.Name("Info"): model.Ref{ObjectNumber: infoNum, Generation: 0},
 		},
 	}
+	// PDF/A-4 (ISO 19005-4 §6.1.3) forbids the Info dictionary unless the catalog
+	// carries PieceInfo; the XMP packet holds the metadata instead.
+	if !b.metadata.DatesOnly {
+		infoNum := nextNum
+		nextNum++
+		objs[infoNum] = b.metadata.BuildInfoDict()
+		trailer.Dict[model.Name("Info")] = model.Ref{ObjectNumber: infoNum, Generation: 0}
+	}
+
+	nextNum = b.metadata.BuildMetadataStream(objs, catalogDict, nextNum)
+	trailer.Dict[model.Name("Size")] = model.Integer(nextNum)
 	encodeTextStrings(objs, b.metadata.PDF20)
 	if err := b.checkPDFA(objs); err != nil {
 		return nil, err
 	}
+	if err := b.checkPDFUA(objs); err != nil {
+		return nil, err
+	}
 	d := &builtDocument{
-		trailer: trailer,
-		objects: objs,
-		size:    nextNum,
+		trailer:         trailer,
+		objects:         objs,
+		size:            nextNum,
+		noObjectStreams: b.noObjectStreams,
 	}
 	if b.pdfa != "" {
 		d.pdfa = true
 		d.version = b.pdfa.PDFVersion()
+	} else if v := b.pdfuaVersion(); v != "" {
+		d.version = v
 	}
 	return d, nil
 }
@@ -205,7 +236,11 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 			contentStreamNum := nextNum
 			nextNum++
 			imageStreamNums := make([]int, len(spec.ImageRuns))
-			for i := range spec.ImageRuns {
+			for i, im := range spec.ImageRuns {
+				if im.ObjNum > 0 {
+					imageStreamNums[i] = im.ObjNum // written already (streaming output)
+					continue
+				}
 				imageStreamNums[i] = nextNum
 				nextNum++
 			}
@@ -226,33 +261,23 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 			if !b.noCompressContent {
 				streamDict[model.Name("Filter")] = model.Name("FlateDecode")
 			}
-			objs[contentStreamNum] = &model.Stream{
-				Dict:    streamDict,
-				Content: contentBytes,
+			contentStream := &model.Stream{Dict: streamDict, Content: contentBytes}
+			if b.stream != nil {
+				if err := b.stream.writeObject(b, contentStreamNum, contentStream); err != nil {
+					return nextNum, err
+				}
+			} else {
+				objs[contentStreamNum] = contentStream
 			}
 			for i, im := range spec.ImageRuns {
-				// Create the main image XObject stream
-				var imgStream *model.Stream
-				if im.IsJPEG {
-					imgStream = b.jpegXObjectStream(im)
-				} else {
-					imgStream = b.imageXObjectStream(im)
+				if im.ObjNum > 0 {
+					continue
 				}
-				// If this image has a soft mask, allocate and write it, and link via /SMask
-				if im.HasMask && len(im.Mask) > 0 && im.MaskWidth > 0 && im.MaskHeight > 0 {
+				imgStream, maskStream := b.imageStreams(im)
+				if maskStream != nil {
 					maskNum := nextNum
 					nextNum++
-					maskDict := model.Dict{
-						model.Name("Type"):             model.Name("XObject"),
-						model.Name("Subtype"):          model.Name("Image"),
-						model.Name("Width"):            model.Integer(int64(im.MaskWidth)),
-						model.Name("Height"):           model.Integer(int64(im.MaskHeight)),
-						model.Name("BitsPerComponent"): model.Integer(8),
-						model.Name("ColorSpace"):       model.Name("DeviceGray"),
-						model.Name("Filter"):           model.Name("FlateDecode"),
-						model.Name("Length"):           model.Integer(int64(len(im.Mask))),
-					}
-					objs[maskNum] = &model.Stream{Dict: maskDict, Content: im.Mask}
+					objs[maskNum] = maskStream
 					imgStream.Dict[model.Name("SMask")] = model.Ref{ObjectNumber: maskNum}
 				}
 				objs[imageStreamNums[i]] = imgStream
@@ -261,8 +286,16 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 
 		annotRefs, updatedNext := b.outlines.BuildLinkAnnotations(objs, idx, pageNums, nextNum)
 		nextNum = updatedNext
+		for _, build := range b.annots[idx] {
+			ref := build(objs, model.Ref{ObjectNumber: pageNum}, func() int { n := nextNum; nextNum++; return n })
+			annotRefs = append(annotRefs, ref)
+		}
 		if len(annotRefs) > 0 {
 			pageDict[model.Name("Annots")] = annotRefs
+			if b.useTagged {
+				// Tab order follows the structure tree (PDF/UA requires /Tabs on pages with annotations).
+				pageDict[model.Name("Tabs")] = model.Name("S")
+			}
 		}
 
 		objs[pageNum] = pageDict
@@ -337,6 +370,47 @@ func (b *DocumentBuilder) buildEmbeddedFonts(objs map[int]model.Object, nextNum 
 	}
 	if len(embeddedFontObjNums) > 0 {
 		b.replaceEmbeddedFontPlaceholders(objs, embeddedFontObjNums)
+	}
+	return b.indirectStandardFonts(objs, nextNum)
+}
+
+// indirectStandardFonts moves the simple font dictionaries that pages hold
+// inline in their /Resources into shared indirect objects, one per distinct
+// dictionary. Readers expect font dictionaries to be indirect (poppler's font
+// scanner reports an internal error for a direct one), and sharing them keeps
+// multi-page files small.
+func (b *DocumentBuilder) indirectStandardFonts(objs map[int]model.Object, nextNum int) int {
+	shared := map[string]int{}
+	pageNums := make([]int, 0, len(objs))
+	for num := range objs {
+		pageNums = append(pageNums, num)
+	}
+	sort.Ints(pageNums)
+	for _, num := range pageNums {
+		pageDict, ok := objs[num].(model.Dict)
+		if !ok || pageDict[model.Name("Type")] != model.Name("Page") {
+			continue
+		}
+		resDict, _ := pageDict[model.Name("Resources")].(model.Dict)
+		fontDict, _ := resDict[model.Name("Font")].(model.Dict)
+		for resName, val := range fontDict {
+			d, ok := val.(model.Dict)
+			if !ok {
+				continue
+			}
+			if _, placeholder := d[model.Name("_embedded")]; placeholder {
+				continue
+			}
+			key := fmt.Sprint(d) // fmt prints map keys sorted, so equal dicts share a key
+			objNum, seen := shared[key]
+			if !seen {
+				objNum = nextNum
+				nextNum++
+				objs[objNum] = d
+				shared[key] = objNum
+			}
+			fontDict[resName] = model.Ref{ObjectNumber: objNum}
+		}
 	}
 	return nextNum
 }

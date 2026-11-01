@@ -1,0 +1,54 @@
+name: Fuzz
+
+# Continuous fuzzing: every target runs for a fixed time on a schedule and on
+# request, keeping its corpus in the cache between runs so coverage grows.
+# A crash uploads the failing input (testdata/fuzz/<target>/<hash>) as an
+# artifact; commit it as a regression test with the fix.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: Time to spend per target (Go duration)
+        default: 10m
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { pkg: ./syntax/impl, name: FuzzParseObject }
+          - { pkg: ./syntax/impl, name: FuzzTokenizer }
+          - { pkg: ./content/impl, name: FuzzParseContent }
+          - { pkg: ./font/truetype, name: FuzzParse }
+          - { pkg: ./stream, name: FuzzFilters }
+          - { pkg: ./model, name: FuzzTextString }
+          - { pkg: ./model, name: FuzzParseDate }
+          - { pkg: ./tests/reader, name: FuzzReadDocument }
+          - { pkg: ./tests/reader, name: FuzzRoundTrip }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install fonts (seeds for the font parser)
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-liberation fonts-urw-base35
+      - name: Restore the fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build/fuzz
+          key: fuzz-${{ matrix.target.name }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.target.name }}-
+      - name: Fuzz ${{ matrix.target.name }}
+        run: go test ${{ matrix.target.pkg }} -run '^$' -fuzz '^${{ matrix.target.name }}$' -fuzztime ${{ github.event.inputs.fuzztime || '10m' }}
+      - name: Upload the crashing input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-${{ matrix.target.name }}
+          path: "**/testdata/fuzz/${{ matrix.target.name }}/*"
+          if-no-files-found: ignore

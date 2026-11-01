@@ -15,7 +15,39 @@ A library for reading, searching, and modifying PDF documents.
   document parts (`DocumentPart`), black point compensation, and form fields with appearance streams.
   Reading accepts every 1.x and 2.0 feature the writer produces (text strings, dates, catalog `/Version`,
   attachments, `/Extensions`, `/DPartRoot`).
+- **Digital signatures**: `sign.Sign` appends a PAdES (ETSI.CAdES.detached) or PKCS#7 signature as an incremental
+  update, with optional certification (DocMDP), visible appearance and RFC 3161 time-stamp; `sign.Verify` checks the
+  byte range, the CMS signature and the certificate chain; `sign.AddValidationData` stores certificates, CRLs and OCSP
+  responses in /DSS (PAdES-B-LT).
+- **Portable collections, 3D and geospatial**: `Collection` with a schema over the attachments, `Page.Add3D` (U3D/PRC
+  with poster), `Page.AddGeoViewport` with `reader.ExtractGeoViewports` for coordinates.
+- **Fonts**: TrueType and OpenType/CFF (`.otf`) embedding as subsets, `EmbedStandardFonts` to embed Liberation/URW
+  substitutes for the standard 14 fonts (needed for PDF/A and PDF/UA), per-block and system-font fallback
+  (`RegisterBlockFallbackFont`, `EnableSystemFontFallback`), and text shaping: Unicode bidi (UAX #9) reordering,
+  bracket mirroring, Arabic joining through the font's GSUB init/medi/fina features (presentation forms as a
+  fallback), ligatures and kerning, with a ToUnicode CMap that maps shaped glyphs back to their text.
+- **Tagged PDF and PDF/UA**: structure tree in reading order (headings, paragraphs, lists with Lbl/LBody, tables
+  with header scope, figures with alternative text, sections, Link elements for link annotations), and
+  `PDFUA(doc.PDFUA1 | PDFUA2)` for ISO 14289 output: pdfuaid metadata, displayed title, language, artifacts for
+  decorative graphics and headers/footers, the PDF 2.0 structure namespace for PDF/UA-2, and build-time checks
+  (untagged content, missing alternative text, skipped heading levels, unembedded fonts).
 - **PDF/A**: `PDFA(doc.PDFA2B | PDFA3B | PDFA4 | PDFA4E | PDFA4F)` with sRGB output intent and XMP identification.
+- **Compact and streaming output**: files use object streams and a cross-reference stream by default
+  (`NoObjectStreams()` or `writer.WriterOptions.ObjectStreams` for the classic table); image samples are
+  Flate-compressed with a PNG predictor, and `CompressImages(doc.ImageCompression{MaxDPI, JPEGQuality})`
+  downsamples or re-encodes images as JPEG. `StreamTo(w)` + `Finish()` (or `BuildTo(w)`) write images and page
+  content as they are produced, so memory does not grow with the images; `writer.NewStreamWriter` does the same
+  for any object graph.
+
+- **Reading order, incremental updates and redaction**: `ReadContentInReadingOrder()` / `ReadStructuredText()`
+  follow the structure tree of a tagged document (or find columns and paragraphs by layout analysis in an
+  untagged one); `SetInfo`, `SetObject`, `NewObject` and `Replace` change an opened file and `SaveIncremental`
+  appends only those changes, keeping earlier signatures valid; `doc.Redact` removes text by string, pattern or
+  area and draws a box over it. Merge, split and page extraction are in `doc.Merge`, `doc.Split`, `doc.Extract`.
+- **Validated output**: CI checks every kind of file the library writes (classic and compressed, encrypted,
+  linearized, streamed, merged, signed, incrementally updated, redacted, PDF/A-2b/3b/4/4f, PDF/UA-1/2) with
+  `qpdf --check` and veraPDF, fuzzes the parsers, filters, fonts and the read/write round trip every night, and
+  reports benchmark changes on pull requests with benchstat (see "Checking conformance" below).
 
 ## Usage
 
@@ -62,6 +94,23 @@ for _, pageTables := range tables {
 }
 ```
  
+### Reading order, updating in place, redacting
+
+```go
+d, _ := doc.Open("report.pdf")
+text, _ := d.ReadContentInReadingOrder()    // columns and tables in the order they are read
+elems, _ := d.ReadStructuredText()          // []reader.TextElement{Role, Page, Text, ...}
+
+d.SetInfo("Title", model.String("Report, revised"))
+d.Replace("Draft", "Final")
+f, _ := os.Create("report-v2.pdf")
+d.SaveIncremental(f)                        // original bytes + the changed objects only
+
+report, _ := doc.Redact(d, doc.RedactOptions{Texts: []string{"Alice"}, Pattern: regexp.MustCompile(`\d{3}-\d{4}`)})
+g, _ := os.Create("report-redacted.pdf")
+d.Save(g)                                   // full rewrite: the removed text is gone
+```
+
 ### Merging PDFs
 
 ```go
@@ -118,6 +167,37 @@ f, _ := os.Create("extracted.pdf")
 extracted.Save(f)
 f.Close()
 ```
+
+### Streaming a large document
+
+```go
+f, _ := os.Create("catalogue.pdf")
+b := doc.New().StreamTo(f).CompressImages(doc.ImageCompression{MaxDPI: 200, JPEGQuality: 85})
+for _, item := range items {
+    b.AddPage()
+    b.DrawPNG(36, 400, 300, 300, item.PNG) // written to f now, samples released
+    b.DrawParagraph(b.PageCount()-1, item.Text, 36, 380, "Helvetica", 11)
+}
+err := b.Finish() // pages, fonts, structure and the cross-reference
+```
+
+### Checking conformance
+
+`tests/conformance` writes a corpus of every output form and runs the external validators over it. The tests
+skip when a tool is missing; set `GPDF_REQUIRE_TOOLS=1` (as CI does) to make a missing tool a failure, or point
+`QPDF_BIN` / `VERAPDF_BIN` at a binary. veraPDF runs from the Maven Central `greenfield-apps` jar:
+
+```sh
+sudo apt-get install qpdf
+curl -sSfL -o greenfield-apps.jar \
+  https://repo1.maven.org/maven2/org/verapdf/apps/greenfield-apps/1.28.2/greenfield-apps-1.28.2.jar
+printf '#!/bin/sh\nexec java -cp %s org.verapdf.apps.GreenfieldCliWrapper "$@"\n' "$PWD/greenfield-apps.jar" > verapdf && chmod +x verapdf
+VERAPDF_BIN=$PWD/verapdf GPDF_CONFORMANCE_DIR=/tmp/corpus go test ./tests/conformance -v
+```
+
+`GPDF_CONFORMANCE_DIR` keeps the generated files for inspection. Fuzz targets live next to the code
+(`go test ./content/impl -run '^$' -fuzz FuzzParseContent`), and `go test ./tests/doc ./tests/reader -bench .`
+runs the benchmarks.
 
 ### Merging from Remote Sources (URL/S3)
 

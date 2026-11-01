@@ -639,7 +639,7 @@ func (t *TableBuilder) renderCell(isHeader, isArtifact bool, row *tagged.StructR
 			}
 		}
 
-		ps.AddImage(imageRun{
+		t.builder.addImage(ps, imageRun{
 			X: imageX, Y: currY - l.imageHeight,
 			WidthPt: l.imageWidth, HeightPt: l.imageHeight,
 			Raw: cell.Image.Raw, WidthPx: cell.Image.WidthPx, HeightPx: cell.Image.HeightPx,

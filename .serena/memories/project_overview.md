@@ -15,3 +15,7 @@
 - Last full review: 2026-10-31 (see memory `review_findings`); round 2 the same day added headers/footers, PDF/A,
   hint streams, fuzz targets (`FuzzReadDocument`, `FuzzTokenizer`, `FuzzParseObject`) and benchmarks
   (`go test -bench . ./syntax/impl ./tests/reader ./tests/doc`).
+- Roadmap 2026-11-01 (branch claude/project-thread-tv91nd, PR #4), six phases all done: PAdES/collections/3D/geo;
+  fonts (standard-14 substitutes, CFF, fallback, shaping); tagged PDF + PDF/UA; object streams, image
+  recompression, streaming writer; reading order, incremental updates, redaction; qpdf + veraPDF in CI, nightly
+  fuzzing, benchmarks. Output validated with veraPDF 1.28.2 and qpdf (via pikepdf 12.4) in that session.

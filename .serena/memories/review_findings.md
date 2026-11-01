@@ -90,13 +90,75 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
 
 ## Still open
 - SASLprep is applied without NFKC normalisation (no normaliser without golang.org/x/text).
-- PDF 2.0 features not implemented (reading passes them through untouched): /DSS and PAdES signatures (sign package is
-  a stub), /Collection (portable collections), unencrypted wrapper documents, geospatial (/Measure /GEO), 3D/RichMedia
-  annotations, tagged PDF 2.0 namespaces in the builder (reader exposes /Namespaces), page /PressTextureRendering? n/a.
-  Standard 14 fonts are still written unembedded (deprecated in 2.0; embed a TrueType font with RegisterFont instead).
-- Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
-- PDF/A: only level B of parts 2 and 3; checks cover fonts, CMYK and encryption, not everything veraPDF checks
-  (no veraPDF available here). Not done: PDF/A-1, level A/U, embedded-file (AF) support for PDF/A-3.
+- DONE (roadmap phase 1, 2026-11-01): PAdES signatures (`sign` package: CAdES CMS, sign/verify/DSS, pdfsig says
+  "Signature is Valid"), portable collections (`doc/collection.go`, Attachment.CollectionItem -> /CI), 3D annotations
+  (`doc/annot3d.go`, U3D/PRC stream, poster appearance) and geospatial viewports (`doc/geo.go` /VP /Measure GEO,
+  `reader.ExtractGeoViewports` + `ToGeo`). Annotations from builder code go through `doc/annotations.go` annotBuilder.
+- PDF 2.0 features still not implemented: unencrypted wrapper documents, RichMedia, tagged PDF 2.0 namespaces in the
+  builder (reader exposes /Namespaces).
+- DONE (roadmap phase 2, 2026-11-01): `EmbedStandardFonts`/`EmbedStandardFont` (aliases an embeddable font under a
+  standard name; `font/system/standard.go` finds Liberation/Nimbus/Croscore, FreeFont/DejaVu as last resort),
+  OpenType CFF (`font/truetype/cff.go`: Top DICT, charset, ROS; embedded whole as FontFile3/CIDFontType0C under
+  CIDFontType0; glyph codes are CIDs for CID-keyed programs), `RegisterBlockFallbackFont`, `EnableSystemFontFallback`
+  (`font/system/fallback.go`, lazy per-rune lookup), and shaping (`font/shaping`: UAX #9 bidi + mirroring + Arabic
+  joining; `truetype.Font.Shape` applies GSUB init/medi/fina or presentation forms, liga/clig/rlig ligatures, kern).
+  Text runs carry `Glyphs` (visual order); the content writer encodes them and ToUnicode is built per glyph.
+  Fixed on the way: ligature glyphs were not in the subset (Encode applied them, markText did not), every GSUB
+  type-4 lookup was applied (now only liga/clig/rlig), and inline Type1 font dicts in page resources made poppler's
+  pdffonts report an internal error (now shared indirect objects, `indirectStandardFonts`).
+- DONE (roadmap phase 3, 2026-11-01): tagged structure now follows reading order (`tagged.Support.Order` /
+  `Section.Kids` of `ElemRef`, recorded by `RecordSection*`; older index slices kept), list items are LI > Lbl + LBody,
+  the identity RoleMap is gone, link annotations get Link elements with OBJR + /StructParent (`TagAnnotations`),
+  PDF 2.0 namespaces (`UseNamespaces`: /Namespaces on the root, /NS on every element; Quote/Code and other dropped
+  types go to the PDF 1.7 namespace). `PDFUA(PDFUA1|PDFUA2)` (`doc/pdfua.go`): pdfuaid XMP (part, rev 2024),
+  ViewerPreferences DisplayDocTitle, /Tabs /S on pages with annotations, graphic runs wrapped as Artifact when
+  balanced, /Contents on link annotations, header 1.7 for UA-1 / 2.0 for UA-2, standard fonts auto-embedded,
+  `checkPDFUA` (title, language, untagged text/images, figure Alt, heading levels, embedded fonts, UA-2 vs PDF/A-2/3).
+- PDF/UA limits: no veraPDF run here (not installable); not checked: table header associations beyond Scope,
+  contrast, Unicode mapping of every glyph (ToUnicode is always written), form field labels, bookmarks for long
+  documents. Flow/table text inside tagged documents is tagged as P/TD automatically, free `DrawText` is not.
+- Font limits: CFF programs are embedded whole (no CFF subsetting); shaping covers Arabic joining only (no Indic
+  reordering, no mark positioning/GPOS); bidi ignores explicit embedding/isolate controls; Symbol/ZapfDingbats
+  substitutes need URW base35 (`StandardSymbolsPS`, `D050000L`) installed.
+- Signature limits: time-stamp tokens are embedded but their own signature is not checked; no OCSP/CRL fetching
+  (caller passes DER data to AddValidationData); signing an encrypted file is refused.
+- DONE (roadmap phase 4, 2026-11-01): object streams + cross-reference stream are the writer default
+  (`WriterOptions.ObjectStreams`, builder `NoObjectStreams()`; 1.4 headers and linearized output keep the table;
+  encrypted files pack too, strings inside ObjStm unencrypted per §7.6.2); `WriteIncremental` follows the base
+  xref form; Flate/LZW re-encoding applies the requested predictor (`predictor.Encode`, PNG 10–15 and TIFF 2);
+  raw images and soft masks get Predictor 15; `CompressImages(ImageCompression{MaxDPI, JPEGQuality})`;
+  `writer.StreamWriter` and builder `StreamTo`/`Finish`/`BuildTo`. Reader fix: `decodeSMaskFully` now recognises
+  already-decoded mask content (`SMaskDecoded` was false for Flate+predictor masks).
+- DONE (roadmap phase 5, 2026-11-01): reading-order extraction (structure tree or XY-cut layout fallback),
+  incremental updates (`SaveIncremental`, change tracking in the reader; Replace no longer loses edits to cache
+  eviction), redaction (`doc.Redact`). Builder fix: `/Alt` was written inside `/A` for figures and cells (it is an
+  element entry, §14.9.3); TH `/A` now carries `/O /Table` as attribute dictionaries must.
+- Reading-order limits: no Indic/vertical text handling in the XY cut; rotated pages are read in unrotated
+  coordinates; MCIDs inside form XObjects are attributed to the page.
+- Redaction limits: removes whole text-showing operators (the run containing the match, not only the matched
+  characters); text in form XObjects, annotations, bookmarks, metadata and glyph programs is not removed; box
+  geometry assumes unrotated text.
+- Streaming limits: no encryption or linearization in streaming mode; the builder still keeps text runs and page
+  specs until Finish (only image samples and content streams are released early); no dangling-reference check.
+- Image compression limits: downsampling handles 8-bit samples only; CMYK JPEGs that are downsampled are stored
+  as Flate CMYK (Go's encoder has no CMYK JPEG); no JPEG 2000, no recompression of images in opened files.
+- Writer always re-encodes Flate content (no pass-through of the original compressed bytes). Tests that grep the
+  raw output for dictionary text need `NoObjectStreams()` (dicts live in compressed object streams otherwise).
+- DONE (roadmap phase 6, 2026-11-01): `tests/conformance` corpus (19 output forms) checked by `qpdf --check` and
+  veraPDF 1.28.2 in CI (`GPDF_REQUIRE_TOOLS=1`), nightly fuzzing (`.github/workflows/fuzz.yml`, 9 targets with a
+  cached corpus) and benchstat on PRs (`bench.yml`). veraPDF found and these are FIXED: ParentTree arrays were
+  ordered by element creation instead of MCID (and listed LI for Lbl/LBody); structure elements lacked `/P`
+  (`setStructParents`); PDF/A-4 wrote an Info dictionary (ISO 19005-4 §6.1.3 forbids it, `DatesOnly` now drops
+  it); CIDSet listed only used glyphs (must list every glyph slot of the subset, `Font.SubsetGlyphs`, or every
+  CID of a whole CFF program, `Font.ProgramCIDs`); PDF/A + PDF/UA files lacked the pdfaExtension schema for
+  pdfuaid. qpdf found: linearization page-offset hints listed the first page's own objects as shared and later
+  pages did not reference first-page objects they reuse (`hintTables`). Fuzzing found: content tokenizer looped
+  forever on a name ending in `#` (`/F#`); `content.Encoder` wrote inline images as `<<…>> (…) BI` and dicts in
+  map order; `EncodeTextString` passed undefined control bytes through as PDFDoc text; `walkTextOps` panicked
+  on `Tf` without operands.
+- PDF/A: only level B of parts 2 and 3; every level the builder offers passes veraPDF 1.28.2 for the corpus
+  documents (text, lists, tables, figures, links, embedded Liberation fonts). Not done: PDF/A-1, level A/U,
+  embedded-file (AF) support for PDF/A-3.
 - Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).
 
 ## Repo / process

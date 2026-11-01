@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gsoultan/gpdf/content"
+	"github.com/gsoultan/gpdf/font"
 	"github.com/gsoultan/gpdf/model"
 )
 
@@ -15,9 +16,38 @@ import (
 func (b *DocumentBuilder) buildGraphicsOps(page *pageSpec, pageHeight float64) []content.Op {
 	var ops []content.Op
 	for _, gr := range page.GraphicRuns {
-		ops = append(ops, gr.Ops...)
+		ops = b.appendGraphicOps(ops, gr.Ops)
 	}
 	return ops
+}
+
+// appendGraphicOps appends a graphic run's ops. In a PDF/UA document vector graphics
+// are decorative, so a run whose marked-content operators are balanced is wrapped in
+// an Artifact sequence (runs that open or close a layer are left as they are).
+func (b *DocumentBuilder) appendGraphicOps(ops []content.Op, run []content.Op) []content.Op {
+	if b.pdfua == "" || len(run) == 0 || !balancedMarkedContent(run) {
+		return append(ops, run...)
+	}
+	ops = append(ops, content.Op{Name: "BMC", Args: []model.Object{model.Name("Artifact")}})
+	ops = append(ops, run...)
+	return append(ops, content.Op{Name: "EMC"})
+}
+
+// balancedMarkedContent reports whether every BDC/BMC in ops has its EMC.
+func balancedMarkedContent(ops []content.Op) bool {
+	depth := 0
+	for _, op := range ops {
+		switch op.Name {
+		case "BDC", "BMC":
+			depth++
+		case "EMC":
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
 }
 
 // buildTextOps returns content stream ops from text runs and a font resource map (baseName -> resName).
@@ -118,7 +148,12 @@ func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
 
 	var textArg model.Object
 	useTJ := false
-	if eu, ok := ef[baseName]; ok {
+	if eu, ok := ef[baseName]; ok && len(r.Glyphs) > 0 {
+		// Shaped glyphs: already in visual order with contextual forms and
+		// ligatures applied; kerning becomes TJ adjustments.
+		eu.markGlyphs(r.Glyphs)
+		textArg, useTJ = shapedTextArg(eu, r.Glyphs)
+	} else if eu, ok := ef[baseName]; ok {
 		eu.markText(r.Text)
 		runes := []rune(r.Text)
 		scale := 1000.0 / float64(eu.font.UnitsPerEm())
@@ -471,6 +506,9 @@ func (b *DocumentBuilder) imageXObjectStream(im imageRun) *model.Stream {
 		model.Name("Filter"): model.Name("FlateDecode"),
 		model.Name("Length"): model.Integer(int64(len(im.Raw))),
 	}
+	if p := predictorParms(im.ColorSpace, im.BitsPerComponent, im.WidthPx); p != nil {
+		dict[model.Name("DecodeParms")] = p
+	}
 	return &model.Stream{Dict: dict, Content: im.Raw}
 }
 
@@ -517,6 +555,43 @@ func jpegHasAdobeMarker(data []byte) bool {
 		i += 2 + segLen
 	}
 	return false
+}
+
+// shapedTextArg encodes shaped glyphs for Tj, or for TJ when kerning applies.
+func shapedTextArg(eu *embeddedFontUsage, glyphs []font.Glyph) (model.Object, bool) {
+	ge, _ := unwrapFont(eu.font).(font.GlyphEncoder)
+	encode := func(ids []uint16) []byte {
+		if ge != nil {
+			return ge.EncodeGlyphs(ids)
+		}
+		out := make([]byte, 0, len(ids)*2)
+		for _, id := range ids {
+			out = append(out, byte(id>>8), byte(id))
+		}
+		return out
+	}
+	scale := 1000.0 / float64(eu.font.UnitsPerEm())
+	var tj model.Array
+	var pending []uint16
+	hasKern := false
+	for _, g := range glyphs {
+		if g.Kern != 0 {
+			if len(pending) > 0 {
+				tj = append(tj, model.HexString(encode(pending)))
+				pending = pending[:0]
+			}
+			tj = append(tj, model.Real(-float64(g.Kern)*scale))
+			hasKern = true
+		}
+		pending = append(pending, g.ID)
+	}
+	if !hasKern {
+		return model.HexString(encode(pending)), false
+	}
+	if len(pending) > 0 {
+		tj = append(tj, model.HexString(encode(pending)))
+	}
+	return tj, true
 }
 
 func winAnsiEncode(s string) string {

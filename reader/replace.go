@@ -64,9 +64,23 @@ func ReplacesContent(src contentSource, replacements map[string]string) error {
 				return err
 			}
 			s.Content = encoded
+			markModified(src, ref, s)
 		}
 	}
 	return nil
+}
+
+// objectModifier is implemented by documents that track changed objects (files
+// read from disk), so that the change survives cache eviction and can be saved
+// as an incremental update.
+type objectModifier interface {
+	MarkModified(ref model.Ref, obj model.Object)
+}
+
+func markModified(src contentSource, ref model.Ref, obj model.Object) {
+	if m, ok := src.(objectModifier); ok {
+		m.MarkModified(ref, obj)
+	}
 }
 
 func buildReplacementPlan(replacements map[string]string) ([]string, [][]byte) {

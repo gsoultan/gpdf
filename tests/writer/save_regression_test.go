@@ -14,6 +14,7 @@ import (
 	"github.com/gsoultan/gpdf/internal/pdftest"
 	"github.com/gsoultan/gpdf/model"
 	"github.com/gsoultan/gpdf/security"
+	"github.com/gsoultan/gpdf/writer"
 )
 
 func open(t *testing.T, pdf []byte, password string) doc.Document {
@@ -79,30 +80,43 @@ func TestSaveKeepsNonZeroGenerations(t *testing.T) {
 }
 
 // Regression: saving a PDF 1.5 file copied the xref-stream dictionary (/W, /Index,
-// /Filter, /DecodeParms...) and /Prev into the new classic trailer, and kept a predictor
-// /DecodeParms on streams re-encoded without a predictor.
+// /Filter, /DecodeParms...) and /Prev into the new trailer. The output has its own
+// cross-reference stream; the source one is not copied, and the predictor the
+// content stream asks for is applied again on the way out.
 func TestSaveFromXRefStreamWritesCleanTrailer(t *testing.T) {
 	content := []byte("BT /F1 12 Tf 20 100 Td (Clean trailer) Tj ET")
 	b := pdftest.New("1.7").OnePage()
 	b.Stream(4, 0, "/Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 6 >>", pdftest.Flate(pdftest.PNGUp(content, 6)))
 	out := save(t, open(t, b.XRefStream("/Root 1 0 R /Prev 999999"), ""))
-	tail := out[bytes.LastIndex(out, []byte("trailer")):]
-	for _, bad := range []string{"/W", "/Index", "/Prev", "/DecodeParms", "/Type"} {
-		if bytes.Contains(tail, []byte(bad)) {
-			t.Fatalf("trailer contains %s:\n%s", bad, tail)
-		}
+	if bytes.Contains(out, []byte("/Prev")) {
+		t.Fatalf("output carries the source /Prev:\n%s", out)
 	}
-	if bytes.Contains(out, []byte("/Predictor")) {
-		t.Fatal("re-encoded stream still declares a predictor")
+	if n := bytes.Count(out, []byte("/XRef")); n != 1 {
+		t.Fatalf("found %d cross-reference streams, want the output's own", n)
 	}
-	if bytes.Contains(out, []byte("/XRef")) {
-		t.Fatal("source cross-reference stream was copied into the output")
+	if bytes.Contains(out, []byte("trailer")) {
+		t.Fatal("a cross-reference stream file has no trailer keyword")
 	}
 	if got := text(t, open(t, out, "")); !strings.Contains(got, "Clean trailer") {
 		t.Fatalf("text = %q", got)
 	}
 	if s, ok := popplerText(t, out); ok && !strings.Contains(s, "Clean trailer") {
 		t.Fatalf("poppler text = %q", s)
+	}
+	// Without object streams the classic layout comes back, still without /Prev.
+	var classic bytes.Buffer
+	pw := writer.NewPDFWriterWithOptions(writer.WriterOptions{ObjectStreams: new(false)})
+	if err := pw.Write(&classic, open(t, out, "").(writer.Document)); err != nil {
+		t.Fatal(err)
+	}
+	tail := classic.Bytes()[bytes.LastIndex(classic.Bytes(), []byte("trailer")):]
+	for _, bad := range []string{"/W", "/Index", "/Prev", "/DecodeParms", "/Type"} {
+		if bytes.Contains(tail, []byte(bad)) {
+			t.Fatalf("trailer contains %s:\n%s", bad, tail)
+		}
+	}
+	if bytes.Contains(classic.Bytes(), []byte("/XRef")) || bytes.Contains(classic.Bytes(), []byte("/ObjStm")) {
+		t.Fatal("classic output must not use cross-reference or object streams")
 	}
 }
 

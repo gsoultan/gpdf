@@ -13,8 +13,10 @@ type tableRecord struct {
 	checksum uint32
 }
 
-// Parse reads a TrueType (.ttf) or OpenType (.otf) font from raw bytes and returns a Font.
-// It extracts glyph metrics, character-to-glyph mappings, and naming information.
+// Parse reads a TrueType (.ttf) or OpenType (.otf, either TrueType or CFF
+// outlines) font from raw bytes and returns a Font. It extracts glyph metrics,
+// character-to-glyph mappings, naming information and the substitutions the
+// shaper needs.
 func Parse(data []byte) (*Font, error) {
 	if len(data) < 12 {
 		return nil, fmt.Errorf("truetype: data too short for offset table")
@@ -112,6 +114,9 @@ func (f *Font) initialize() (*Font, error) {
 		return nil, err
 	}
 	if err := f.parseCmap(); err != nil {
+		return nil, err
+	}
+	if err := f.parseCFF(); err != nil {
 		return nil, err
 	}
 	if err := f.parseOS2(); err != nil {

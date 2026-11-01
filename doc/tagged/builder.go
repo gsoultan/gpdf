@@ -126,12 +126,15 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 				} else {
 					elemDict[model.Name("K")] = kids
 				}
+				// Scope is a table attribute (owner /Table, ISO 32000-2 §14.8.5.7);
+				// Alt and Lang are entries of the element itself (§14.9.3, §14.9.2).
 				attr := model.Dict{}
 				if c.Role == model.Name("TH") && c.Scope != "" {
+					attr[model.Name("O")] = model.Name("Table")
 					attr[model.Name("Scope")] = model.Name(c.Scope)
 				}
 				if c.Alt != "" {
-					attr[model.Name("Alt")] = model.String(c.Alt)
+					elemDict[model.Name("Alt")] = model.String(c.Alt)
 				}
 				if c.Lang != "" {
 					elemDict[model.Name("Lang")] = model.String(c.Lang)
@@ -239,9 +242,7 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 			model.Name("K"):    mcr,
 		}
 		if fig.Alt != "" {
-			elemDict[model.Name("A")] = model.Dict{
-				model.Name("Alt"): model.String(fig.Alt),
-			}
+			elemDict[model.Name("Alt")] = model.String(fig.Alt)
 		}
 		objs[figureObjNums[i]] = elemDict
 	}
@@ -267,29 +268,73 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 		pageRef := model.Ref{ObjectNumber: pageNums[lst.PageIndex], Generation: 0}
 		var liRefs model.Array
 		for j, it := range lst.Items {
-			mcr := model.Dict{
-				model.Name("Type"): model.Name("MCR"),
-				model.Name("Pg"):   pageRef,
-				model.Name("MCID"): model.Integer(int64(it.MCID)),
+			liRef := model.Ref{ObjectNumber: itemObjNums[i][j], Generation: 0}
+			// LI holds an optional Lbl (the bullet or number) and an LBody (the text).
+			var liKids model.Array
+			if it.HasLabel {
+				lblNum := nextNum
+				nextNum++
+				objs[lblNum] = model.Dict{
+					model.Name("Type"): model.Name("StructElem"),
+					model.Name("S"):    model.Name("Lbl"),
+					model.Name("P"):    liRef,
+					model.Name("Pg"):   pageRef,
+					model.Name("K"):    mcr(pageRef, it.LabelMCID),
+				}
+				liKids = append(liKids, model.Ref{ObjectNumber: lblNum})
 			}
-			liDict := model.Dict{
+			bodyNum := nextNum
+			nextNum++
+			objs[bodyNum] = model.Dict{
+				model.Name("Type"): model.Name("StructElem"),
+				model.Name("S"):    model.Name("LBody"),
+				model.Name("P"):    liRef,
+				model.Name("Pg"):   pageRef,
+				model.Name("K"):    mcr(pageRef, it.MCID),
+			}
+			liKids = append(liKids, model.Ref{ObjectNumber: bodyNum})
+			objs[itemObjNums[i][j]] = model.Dict{
 				model.Name("Type"): model.Name("StructElem"),
 				model.Name("S"):    model.Name("LI"),
 				model.Name("P"):    model.Ref{ObjectNumber: listObjNums[i], Generation: 0},
 				model.Name("Pg"):   pageRef,
-				model.Name("K"):    mcr,
+				model.Name("K"):    liKids,
 			}
-			objs[itemObjNums[i][j]] = liDict
-			liRefs = append(liRefs, model.Ref{ObjectNumber: itemObjNums[i][j], Generation: 0})
+			liRefs = append(liRefs, liRef)
 		}
 		listDict := model.Dict{
 			model.Name("Type"): model.Name("StructElem"),
 			model.Name("S"):    model.Name("L"),
 			model.Name("K"):    liRefs,
 		}
+		if lst.Ordered {
+			listDict[model.Name("A")] = model.Dict{model.Name("O"): model.Name("List"), model.Name("ListNumbering"): model.Name("Decimal")}
+		}
 		objs[listObjNums[i]] = listDict
 	}
 
+	// Elements are emitted in the order they were recorded (the reading order).
+	objNumOf := func(ref ElemRef) int {
+		switch ref.Kind {
+		case KindBlock:
+			if ref.Index >= 0 && ref.Index < len(blockObjNums) {
+				return blockObjNums[ref.Index]
+			}
+		case KindFigure:
+			if ref.Index >= 0 && ref.Index < len(figureObjNums) {
+				return figureObjNums[ref.Index]
+			}
+		case KindTable:
+			if ref.Index >= 0 && ref.Index < len(tableObjNums) {
+				return tableObjNums[ref.Index]
+			}
+		case KindList:
+			if ref.Index >= 0 && ref.Index < len(listObjNums) {
+				return listObjNums[ref.Index]
+			}
+		}
+		return 0
+	}
 	sectObjNums := make([]int, len(s.Sections))
 	for i := range s.Sections {
 		sectObjNums[i] = nextNum
@@ -297,24 +342,9 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 	}
 	for i, sec := range s.Sections {
 		var kids model.Array
-		for _, bi := range sec.BlockIndices {
-			if bi >= 0 && bi < len(blockObjNums) && blockObjNums[bi] != 0 {
-				kids = append(kids, model.Ref{ObjectNumber: blockObjNums[bi], Generation: 0})
-			}
-		}
-		for _, fi := range sec.FigureIndices {
-			if fi >= 0 && fi < len(figureObjNums) && figureObjNums[fi] != 0 {
-				kids = append(kids, model.Ref{ObjectNumber: figureObjNums[fi], Generation: 0})
-			}
-		}
-		for _, ti := range sec.TableIndices {
-			if ti >= 0 && ti < len(tableObjNums) && tableObjNums[ti] != 0 {
-				kids = append(kids, model.Ref{ObjectNumber: tableObjNums[ti], Generation: 0})
-			}
-		}
-		for _, li := range sec.ListIndices {
-			if li >= 0 && li < len(listObjNums) && listObjNums[li] != 0 {
-				kids = append(kids, model.Ref{ObjectNumber: listObjNums[li], Generation: 0})
+		for _, ref := range sec.Kids {
+			if num := objNumOf(ref); num != 0 {
+				kids = append(kids, model.Ref{ObjectNumber: num, Generation: 0})
 			}
 		}
 		objs[sectObjNums[i]] = model.Dict{
@@ -325,52 +355,104 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 	}
 
 	var docKids model.Array
-	if len(s.Sections) > 0 {
-		for _, snum := range sectObjNums {
-			docKids = append(docKids, model.Ref{ObjectNumber: snum, Generation: 0})
+	seen := map[int]bool{}
+	addKid := func(num int) {
+		if num != 0 && !seen[num] {
+			seen[num] = true
+			docKids = append(docKids, model.Ref{ObjectNumber: num, Generation: 0})
 		}
-		for ti, tnum := range tableObjNums {
-			if tnum != 0 && !inSection(s.Sections, 0, 0, ti, 0, 't') {
-				docKids = append(docKids, model.Ref{ObjectNumber: tnum, Generation: 0})
+	}
+	for _, ref := range s.Order {
+		if ref.Kind == KindSection {
+			if ref.Index >= 0 && ref.Index < len(sectObjNums) {
+				addKid(sectObjNums[ref.Index])
+			}
+			continue
+		}
+		addKid(objNumOf(ref))
+	}
+	// Elements recorded without going through the reading order (older callers
+	// that filled the slices directly) follow, grouped by kind.
+	for i := range s.Sections {
+		addKid(sectObjNums[i])
+	}
+	inSomeSection := func(ref ElemRef) bool {
+		for _, sec := range s.Sections {
+			for _, k := range sec.Kids {
+				if k == ref {
+					return true
+				}
 			}
 		}
-		for li, lnum := range listObjNums {
-			if lnum != 0 && !inSection(s.Sections, 0, 0, 0, li, 'l') {
-				docKids = append(docKids, model.Ref{ObjectNumber: lnum, Generation: 0})
-			}
+		return false
+	}
+	for ti := range s.Tables {
+		if !inSomeSection(ElemRef{KindTable, ti}) && !inSection(s.Sections, 0, 0, ti, 0, 't') {
+			addKid(tableObjNums[ti])
 		}
-		for bi, bnum := range blockObjNums {
-			if bnum != 0 && !inSection(s.Sections, bi, 0, 0, 0, 'b') {
-				docKids = append(docKids, model.Ref{ObjectNumber: bnum, Generation: 0})
-			}
+	}
+	for li := range s.Lists {
+		if !inSomeSection(ElemRef{KindList, li}) && !inSection(s.Sections, 0, 0, 0, li, 'l') {
+			addKid(listObjNums[li])
 		}
-		for fi, fnum := range figureObjNums {
-			if fnum != 0 && !inSection(s.Sections, 0, fi, 0, 0, 'f') {
-				docKids = append(docKids, model.Ref{ObjectNumber: fnum, Generation: 0})
-			}
+	}
+	for bi := range s.Blocks {
+		if !inSomeSection(ElemRef{KindBlock, bi}) && !inSection(s.Sections, bi, 0, 0, 0, 'b') {
+			addKid(blockObjNums[bi])
 		}
-	} else {
-		for _, tnum := range tableObjNums {
-			if tnum != 0 {
-				docKids = append(docKids, model.Ref{ObjectNumber: tnum, Generation: 0})
-			}
+	}
+	for fi := range s.Figures {
+		if !inSomeSection(ElemRef{KindFigure, fi}) && !inSection(s.Sections, 0, fi, 0, 0, 'f') {
+			addKid(figureObjNums[fi])
 		}
-		for _, lnum := range listObjNums {
-			if lnum != 0 {
-				docKids = append(docKids, model.Ref{ObjectNumber: lnum, Generation: 0})
+	}
+
+	// Link annotations become Link elements with an object reference, and the
+	// annotation points back through /StructParent.
+	type annotElem struct {
+		objNum int
+	}
+	var annotElems []annotElem
+	nextParentKey := 0
+	if s.TagAnnotations {
+		for _, pageNum := range pageNums {
+			pd, ok := objs[pageNum].(model.Dict)
+			if !ok {
+				continue
 			}
-		}
-		for _, bnum := range blockObjNums {
-			if bnum != 0 {
-				docKids = append(docKids, model.Ref{ObjectNumber: bnum, Generation: 0})
-			}
-		}
-		for _, fnum := range figureObjNums {
-			if fnum != 0 {
-				docKids = append(docKids, model.Ref{ObjectNumber: fnum, Generation: 0})
+			annots, _ := pd[model.Name("Annots")].(model.Array)
+			for _, a := range annots {
+				ref, ok := a.(model.Ref)
+				if !ok {
+					continue
+				}
+				ad, ok := objs[ref.ObjectNumber].(model.Dict)
+				if !ok || ad[model.Name("Subtype")] != model.Name("Link") {
+					continue
+				}
+				elemNum := nextNum
+				nextNum++
+				pageRef := model.Ref{ObjectNumber: pageNum, Generation: 0}
+				elem := model.Dict{
+					model.Name("Type"): model.Name("StructElem"),
+					model.Name("S"):    model.Name("Link"),
+					model.Name("Pg"):   pageRef,
+					model.Name("K"): model.Array{model.Dict{
+						model.Name("Type"): model.Name("OBJR"),
+						model.Name("Obj"):  ref,
+						model.Name("Pg"):   pageRef,
+					}},
+				}
+				if c, ok := ad[model.Name("Contents")]; ok {
+					elem[model.Name("Alt")] = c
+				}
+				objs[elemNum] = elem
+				annotElems = append(annotElems, annotElem{objNum: elemNum})
+				addKid(elemNum)
 			}
 		}
 	}
+
 	documentNum := nextNum
 	nextNum++
 	documentDict := model.Dict{
@@ -385,88 +467,193 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 		model.Name("K"):    model.Array{model.Ref{ObjectNumber: documentNum, Generation: 0}},
 	}
 
-	roleMap := model.Dict{
-		model.Name("Document"): model.Name("Document"),
-		model.Name("Sect"):     model.Name("Sect"),
-		model.Name("Table"):    model.Name("Table"),
-		model.Name("TR"):       model.Name("TR"),
-		model.Name("TH"):       model.Name("TH"),
-		model.Name("TD"):       model.Name("TD"),
-		model.Name("P"):        model.Name("P"),
-		model.Name("H1"):       model.Name("H1"),
-		model.Name("H2"):       model.Name("H2"),
-		model.Name("H3"):       model.Name("H3"),
-		model.Name("H4"):       model.Name("H4"),
-		model.Name("H5"):       model.Name("H5"),
-		model.Name("H6"):       model.Name("H6"),
-		model.Name("Caption"):  model.Name("Caption"),
-		model.Name("Quote"):    model.Name("Quote"),
-		model.Name("Code"):     model.Name("Code"),
-		model.Name("Figure"):   model.Name("Figure"),
-		model.Name("L"):        model.Name("L"),
-		model.Name("LI"):       model.Name("LI"),
-	}
-	structRoot[model.Name("RoleMap")] = roleMap
-
-	if len(cellElems) > 0 || len(s.Blocks) > 0 || len(s.Lists) > 0 || len(s.Figures) > 0 {
+	// Parent tree (ISO 32000-2 §14.7.5.4): one array per page with marked
+	// content, indexed by MCID and naming the element that holds that marked
+	// content, then one entry per tagged annotation.
+	pageMCIDs := mcidParents(objs, structTreeNum, nextNum)
+	if len(pageMCIDs) > 0 || len(annotElems) > 0 {
 		parentTreeNum := nextNum
 		nextNum++
-		pageCells := make(map[int]model.Array)
-		for _, ce := range cellElems {
-			pageCells[ce.pageIndex] = append(pageCells[ce.pageIndex],
-				model.Ref{ObjectNumber: ce.objNum, Generation: 0},
-			)
-		}
-		for i, blk := range s.Blocks {
-			if blk.PageIndex < 0 || blk.PageIndex >= len(pageNums) {
-				continue
-			}
-			pageCells[blk.PageIndex] = append(pageCells[blk.PageIndex],
-				model.Ref{ObjectNumber: blockObjNums[i], Generation: 0},
-			)
-		}
-		for i, lst := range s.Lists {
-			if lst.PageIndex < 0 || lst.PageIndex >= len(pageNums) {
-				continue
-			}
-			for j := range lst.Items {
-				pageCells[lst.PageIndex] = append(pageCells[lst.PageIndex],
-					model.Ref{ObjectNumber: itemObjNums[i][j], Generation: 0},
-				)
-			}
-		}
-		for i, fig := range s.Figures {
-			if figureObjNums[i] == 0 || fig.PageIndex < 0 || fig.PageIndex >= len(pageNums) {
-				continue
-			}
-			pageCells[fig.PageIndex] = append(pageCells[fig.PageIndex],
-				model.Ref{ObjectNumber: figureObjNums[i], Generation: 0},
-			)
-		}
 		var nums model.Array
-		parentIdx := 0
-		for pageIndex, cellsArr := range pageCells {
-			nums = append(nums,
-				model.Integer(int64(parentIdx)),
-				cellsArr,
-			)
-			if pageIndex >= 0 && pageIndex < len(pageNums) {
-				if pd, ok := objs[pageNums[pageIndex]].(model.Dict); ok {
-					pd[model.Name("StructParents")] = model.Integer(int64(parentIdx))
-					objs[pageNums[pageIndex]] = pd
+		for _, pageNum := range pageNums {
+			parents, ok := pageMCIDs[pageNum]
+			if !ok {
+				continue
+			}
+			maxMCID := -1
+			for mcid := range parents {
+				maxMCID = max(maxMCID, mcid)
+			}
+			arr := make(model.Array, maxMCID+1)
+			for i := range arr {
+				if elem, ok := parents[i]; ok {
+					arr[i] = model.Ref{ObjectNumber: elem, Generation: 0}
+				} else {
+					arr[i] = model.Null{}
 				}
 			}
-			parentIdx++
+			nums = append(nums, model.Integer(int64(nextParentKey)), arr)
+			if pd, ok := objs[pageNum].(model.Dict); ok {
+				pd[model.Name("StructParents")] = model.Integer(int64(nextParentKey))
+				objs[pageNum] = pd
+			}
+			nextParentKey++
 		}
-		parentTreeDict := model.Dict{
-			model.Name("Nums"): nums,
+		for _, ae := range annotElems {
+			nums = append(nums, model.Integer(int64(nextParentKey)), model.Ref{ObjectNumber: ae.objNum, Generation: 0})
+			elem := objs[ae.objNum].(model.Dict)
+			kids := elem[model.Name("K")].(model.Array)
+			objr := kids[0].(model.Dict)
+			annotRef := objr[model.Name("Obj")].(model.Ref)
+			if ad, ok := objs[annotRef.ObjectNumber].(model.Dict); ok {
+				ad[model.Name("StructParent")] = model.Integer(int64(nextParentKey))
+			}
+			nextParentKey++
 		}
-		objs[parentTreeNum] = parentTreeDict
+		objs[parentTreeNum] = model.Dict{model.Name("Nums"): nums}
 		structRoot[model.Name("ParentTree")] = model.Ref{ObjectNumber: parentTreeNum, Generation: 0}
+		structRoot[model.Name("ParentTreeNextKey")] = model.Integer(int64(nextParentKey))
+	}
+
+	if s.UseNamespaces {
+		nextNum = s.applyNamespaces(objs, structRoot, structTreeNum, nextNum)
 	}
 
 	objs[structTreeNum] = structRoot
 	catalogDict[model.Name("StructTreeRoot")] = model.Ref{ObjectNumber: structTreeNum, Generation: 0}
+	setStructParents(objs, structTreeNum)
 
 	return nextNum
+}
+
+// setStructParents gives every structure element reachable from the structure
+// tree root its required /P entry (ISO 32000-2 §14.7.2), the root itself for
+// the top-level elements.
+func setStructParents(objs map[int]model.Object, structTreeNum int) {
+	seen := map[int]bool{}
+	var walk func(num int)
+	walk = func(num int) {
+		if seen[num] {
+			return
+		}
+		seen[num] = true
+		d, ok := objs[num].(model.Dict)
+		if !ok {
+			return
+		}
+		var kids model.Array
+		switch k := d[model.Name("K")].(type) {
+		case model.Array:
+			kids = k
+		case model.Ref:
+			kids = model.Array{k}
+		}
+		for _, k := range kids {
+			ref, ok := k.(model.Ref)
+			if !ok {
+				continue
+			}
+			if kd, ok := objs[ref.ObjectNumber].(model.Dict); ok && kd[model.Name("Type")] == model.Name("StructElem") {
+				kd[model.Name("P")] = model.Ref{ObjectNumber: num, Generation: 0}
+				walk(ref.ObjectNumber)
+			}
+		}
+	}
+	walk(structTreeNum)
+}
+
+// mcr returns a marked-content reference for a sequence on a page.
+func mcr(pageRef model.Ref, mcid int) model.Dict {
+	return model.Dict{
+		model.Name("Type"): model.Name("MCR"),
+		model.Name("Pg"):   pageRef,
+		model.Name("MCID"): model.Integer(int64(mcid)),
+	}
+}
+
+// pdf17OnlyTypes are standard structure types of PDF 1.7 that the PDF 2.0
+// namespace no longer defines; elements with these roles are placed in the
+// PDF 1.7 namespace, whose types ISO 32000-2 Annex L maps onto PDF 2.0 ones.
+var pdf17OnlyTypes = map[model.Name]bool{
+	"Quote": true, "Code": true, "BlockQuote": true, "Note": true, "Reference": true,
+	"BibEntry": true, "Index": true, "TOC": true, "TOCI": true, "Private": true,
+}
+
+// applyNamespaces writes the namespace dictionaries and tags every structure
+// element created after structTreeNum with /NS.
+func (s *Support) applyNamespaces(objs map[int]model.Object, structRoot model.Dict, structTreeNum, nextNum int) int {
+	ns2Num := nextNum
+	nextNum++
+	objs[ns2Num] = model.Dict{model.Name("Type"): model.Name("Namespace"), model.Name("NS"): model.String(NamespacePDF2)}
+	ns2 := model.Ref{ObjectNumber: ns2Num, Generation: 0}
+	namespaces := model.Array{ns2}
+	var ns17 *model.Ref
+	for num, obj := range objs {
+		d, ok := obj.(model.Dict)
+		if !ok || num <= structTreeNum || d[model.Name("Type")] != model.Name("StructElem") {
+			continue
+		}
+		role, _ := d[model.Name("S")].(model.Name)
+		if pdf17OnlyTypes[role] {
+			if ns17 == nil {
+				n := nextNum
+				nextNum++
+				objs[n] = model.Dict{model.Name("Type"): model.Name("Namespace"), model.Name("NS"): model.String(NamespacePDF17)}
+				r := model.Ref{ObjectNumber: n, Generation: 0}
+				ns17 = &r
+				namespaces = append(namespaces, r)
+			}
+			d[model.Name("NS")] = *ns17
+			continue
+		}
+		d[model.Name("NS")] = ns2
+	}
+	structRoot[model.Name("Namespaces")] = namespaces
+	return nextNum
+}
+
+// mcidParents maps, per page object number, each MCID to the structure element
+// (object number in [from, to)) whose /K holds its marked-content reference.
+func mcidParents(objs map[int]model.Object, from, to int) map[int]map[int]int {
+	out := map[int]map[int]int{}
+	record := func(pg model.Object, mcid model.Object, elem int) {
+		ref, ok := pg.(model.Ref)
+		n, isInt := mcid.(model.Integer)
+		if !ok || !isInt {
+			return
+		}
+		if out[ref.ObjectNumber] == nil {
+			out[ref.ObjectNumber] = map[int]int{}
+		}
+		out[ref.ObjectNumber][int(n)] = elem
+	}
+	for num := from; num < to; num++ {
+		d, ok := objs[num].(model.Dict)
+		if !ok || d[model.Name("Type")] != model.Name("StructElem") {
+			continue
+		}
+		var kids model.Array
+		switch k := d[model.Name("K")].(type) {
+		case model.Array:
+			kids = k
+		case nil:
+		default:
+			kids = model.Array{k}
+		}
+		for _, k := range kids {
+			switch k := k.(type) {
+			case model.Integer:
+				record(d[model.Name("Pg")], k, num)
+			case model.Dict:
+				if k[model.Name("Type")] == model.Name("MCR") {
+					pg := k[model.Name("Pg")]
+					if pg == nil {
+						pg = d[model.Name("Pg")]
+					}
+					record(pg, k[model.Name("MCID")], num)
+				}
+			}
+		}
+	}
+	return out
 }

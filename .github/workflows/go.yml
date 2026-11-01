@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  VERAPDF_VERSION: 1.28.2
+  VERAPDF_SHA256: 687d4d8bcfec48c9f7e931cf78ed061f1eeccfba55d4cdc000ba9b4d8aa46ce6
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,11 +17,28 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install poppler (interoperability checks)
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install poppler, qpdf and fonts (interoperability and conformance checks)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf fonts-dejavu-core fonts-liberation fonts-urw-base35
+      - name: Install optional fonts (OpenType CFF and CJK tests skip without them)
+        run: sudo apt-get install -y fonts-inter fonts-noto-cjk || true
+      - name: Install veraPDF (PDF/A and PDF/UA validation)
+        run: |
+          mkdir -p "$HOME/verapdf"
+          curl -sSfL -o "$HOME/verapdf/greenfield-apps.jar" \
+            "https://repo1.maven.org/maven2/org/verapdf/apps/greenfield-apps/${VERAPDF_VERSION}/greenfield-apps-${VERAPDF_VERSION}.jar"
+          echo "${VERAPDF_SHA256}  $HOME/verapdf/greenfield-apps.jar" | sha256sum -c -
+          printf '#!/bin/sh\nexec java -cp "%s" org.verapdf.apps.GreenfieldCliWrapper "$@"\n' "$HOME/verapdf/greenfield-apps.jar" > "$HOME/verapdf/verapdf"
+          chmod +x "$HOME/verapdf/verapdf"
+          echo "$HOME/verapdf" >> "$GITHUB_PATH"
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - name: vet
         run: go vet ./...
       - name: test
+        env:
+          GPDF_REQUIRE_TOOLS: "1"
         run: go test -race ./...

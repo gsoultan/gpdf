@@ -11,6 +11,7 @@ type Document interface {
 	ContentSearcher
 	ImageReader
 	LayoutReader
+	ObjectEditor
 	Saver
 	Resolve(ref model.Ref) (model.Object, error)
 	Close() error
