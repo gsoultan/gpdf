@@ -49,6 +49,7 @@ type Font struct {
 
 	// GSUB: ligature and contextual-form substitution
 	gsub *GSUB
+	gpos *gposKern // GPOS pair kerning; replaces the 'kern' table when present
 
 	// CFF: set for OpenType fonts with PostScript outlines
 	cff *cffInfo
@@ -103,16 +104,25 @@ func (f *Font) Contains(r rune) bool {
 
 // Kern returns the kerning adjustment between two runes in font design units.
 func (f *Font) Kern(r1, r2 rune) int {
-	if f.kernPairs == nil {
-		return 0
-	}
 	gid1 := f.runeToGlyph[r1]
 	gid2 := f.runeToGlyph[r2]
 	if gid1 == 0 || gid2 == 0 {
 		return 0
 	}
-	key := uint32(gid1)<<16 | uint32(gid2)
-	return int(f.kernPairs[key])
+	return f.pairKern(gid1, gid2)
+}
+
+// pairKern returns the kerning between two glyphs in font units. Like
+// HarfBuzz, GPOS kerning is used when the font has it, the legacy 'kern'
+// table otherwise.
+func (f *Font) pairKern(a, b uint16) int {
+	if f.gpos != nil {
+		return f.gpos.adjust(a, b)
+	}
+	if f.kernPairs == nil {
+		return 0
+	}
+	return int(f.kernPairs[uint32(a)<<16|uint32(b)])
 }
 
 // TextWidth measures the total advance width of text in points at the given
