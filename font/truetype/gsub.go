@@ -59,17 +59,7 @@ func (f *Font) parseGSUB() error {
 	// rlig) of every script; discretionary and stylistic ligatures stay off.
 	// Arabic contextual forms come from the init/medi/fina/isol features of
 	// the 'arab' script (falling back to 'DFLT').
-	ligatureLookups := map[int]bool{}
-	for _, fi := range allScriptFeatures(d, scriptListOff) {
-		tag, lookups := featureLookups(d, featureListOff, fi)
-		switch tag {
-		case "liga", "clig", "rlig":
-			for _, li := range lookups {
-				ligatureLookups[li] = true
-			}
-		}
-	}
-	for li := range ligatureLookups {
+	for _, li := range featureTables(d, featureListOff, allScriptFeatures(d, scriptListOff), "liga", "clig", "rlig") {
 		abs, ok := lookupOffset(li)
 		if !ok {
 			continue
@@ -112,20 +102,35 @@ func (f *Font) parseGSUB() error {
 	return nil
 }
 
-// allScriptFeatures returns the feature indices of the default language
-// system of every script in the ScriptList.
+// allScriptFeatures returns the distinct feature indices of the default
+// language system of every script in the ScriptList. Repeated script tables
+// and features are read once, and the total work is bounded so a hostile
+// table cannot make parsing slow.
 func allScriptFeatures(d []byte, scriptListOff int) []int {
 	if scriptListOff+2 > len(d) {
 		return nil
 	}
 	count := int(binary.BigEndian.Uint16(d[scriptListOff:]))
+	seenScript := map[int]bool{}
+	seenFeature := map[int]bool{}
 	var out []int
-	for i := range count {
+	budget := 1 << 16
+	for i := 0; i < count && budget > 0; i++ {
 		rec := scriptListOff + 2 + i*6
 		if rec+6 > len(d) {
 			break
 		}
-		out = append(out, scriptFeatures(d, scriptListOff, string(d[rec:rec+4]))...)
+		script := scriptListOff + int(binary.BigEndian.Uint16(d[rec+4:]))
+		if seenScript[script] {
+			continue
+		}
+		seenScript[script] = true
+		for _, fi := range langSysFeatures(d, script, &budget) {
+			if !seenFeature[fi] {
+				seenFeature[fi] = true
+				out = append(out, fi)
+			}
+		}
 	}
 	return out
 }
@@ -178,38 +183,83 @@ func scriptFeatures(d []byte, scriptListOff int, tag string) []int {
 			continue
 		}
 		script := scriptListOff + int(binary.BigEndian.Uint16(d[rec+4:]))
-		if script+4 > len(d) {
-			return nil
-		}
-		langSysOff := int(binary.BigEndian.Uint16(d[script:]))
-		if langSysOff == 0 {
-			// No default language system: use the first listed one.
-			n := int(binary.BigEndian.Uint16(d[script+2:]))
-			if n == 0 || script+10 > len(d) {
-				return nil
-			}
-			langSysOff = int(binary.BigEndian.Uint16(d[script+8:]))
-		}
-		ls := script + langSysOff
-		if ls+6 > len(d) {
-			return nil
-		}
-		req := int(binary.BigEndian.Uint16(d[ls+2:]))
-		n := int(binary.BigEndian.Uint16(d[ls+4:]))
-		var out []int
-		if req != 0xFFFF {
-			out = append(out, req)
-		}
-		for k := range n {
-			p := ls + 6 + k*2
-			if p+2 > len(d) {
-				break
-			}
-			out = append(out, int(binary.BigEndian.Uint16(d[p:])))
-		}
-		return out
+		budget := 1 << 16
+		return langSysFeatures(d, script, &budget)
 	}
 	return nil
+}
+
+// langSysFeatures returns the feature indices of the default language system
+// of the script table at script (the first listed one when there is no
+// default), spending at most *budget reads.
+func langSysFeatures(d []byte, script int, budget *int) []int {
+	if script+4 > len(d) {
+		return nil
+	}
+	langSysOff := int(binary.BigEndian.Uint16(d[script:]))
+	if langSysOff == 0 {
+		// No default language system: use the first listed one.
+		n := int(binary.BigEndian.Uint16(d[script+2:]))
+		if n == 0 || script+10 > len(d) {
+			return nil
+		}
+		langSysOff = int(binary.BigEndian.Uint16(d[script+8:]))
+	}
+	ls := script + langSysOff
+	if ls+6 > len(d) {
+		return nil
+	}
+	req := int(binary.BigEndian.Uint16(d[ls+2:]))
+	n := int(binary.BigEndian.Uint16(d[ls+4:]))
+	var out []int
+	if req != 0xFFFF {
+		out = append(out, req)
+	}
+	for k := 0; k < n && *budget > 0; k++ {
+		p := ls + 6 + k*2
+		if p+2 > len(d) {
+			break
+		}
+		*budget--
+		out = append(out, int(binary.BigEndian.Uint16(d[p:])))
+	}
+	return out
+}
+
+// featureTables returns the lookup indices of the distinct features among
+// idxs whose tag is one of tags. Features sharing a feature table are read
+// once, so hostile tables cannot multiply the work.
+func featureTables(d []byte, featureListOff int, idxs []int, tags ...string) []int {
+	if featureListOff+2 > len(d) {
+		return nil
+	}
+	count := int(binary.BigEndian.Uint16(d[featureListOff:]))
+	seenTable, seenLookup := map[int]bool{}, map[int]bool{}
+	var out []int
+	for _, idx := range idxs {
+		rec := featureListOff + 2 + idx*6
+		if idx < 0 || idx >= count || rec+6 > len(d) {
+			continue
+		}
+		tag := string(d[rec : rec+4])
+		want := false
+		for _, t := range tags {
+			want = want || t == tag
+		}
+		feat := featureListOff + int(binary.BigEndian.Uint16(d[rec+4:]))
+		if !want || seenTable[feat] {
+			continue
+		}
+		seenTable[feat] = true
+		_, lookups := featureLookups(d, featureListOff, idx)
+		for _, li := range lookups {
+			if !seenLookup[li] {
+				seenLookup[li] = true
+				out = append(out, li)
+			}
+		}
+	}
+	return out
 }
 
 // featureLookups returns the tag and lookup indices of feature number idx.

@@ -76,7 +76,8 @@ func TestSignAndVerify(t *testing.T) {
 			pdf := samplePDF(t)
 			signer := NewCMSSigner(tc.key, cert)
 			signer.IncludeSigningTime = tc.sub == SubFilterPKCS7
-			when := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+			// inside the certificate validity window (a fixed date expires with the cert)
+			when := time.Now().UTC().Truncate(time.Second)
 			var out bytes.Buffer
 			err := Sign(bytes.NewReader(pdf), int64(len(pdf)), &out, signer, SignOptions{
 				Reason: "Approved", Location: "Jakarta", Hash: tc.hash, SubFilter: tc.sub, SigningTime: when,

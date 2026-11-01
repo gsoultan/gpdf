@@ -391,6 +391,36 @@ func (b *DocumentBuilder) DrawTextWithSpacing(textStr string, x, y float64, font
 	return b
 }
 
+// DrawTextSynthetic draws text like DrawTextWithSpacing and synthesises the
+// bold and/or italic style the font lacks: bold by stroking the glyph outlines
+// in the text colour, italic by shearing the glyphs. Advance widths are not
+// changed, matching how browsers synthesise styles.
+func (b *DocumentBuilder) DrawTextSynthetic(textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing, wordSpacing float64, bold, italic bool) *DocumentBuilder {
+	idx := b.lastPageIndex()
+	if !b.pc.validPageIndex(idx) {
+		return b
+	}
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	currentX := x
+	for _, seg := range b.fc.resolveFont(textStr, fontName) {
+		segWidth := b.segmentWidth(seg, fontSize, letterSpacing, wordSpacing)
+		b.pc.pages[idx].AddText(textRun{
+			Text: seg.drawText(), Glyphs: seg.glyphs, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			TextColorRGB:  [3]float64{color.R, color.G, color.B},
+			LetterSpacing: letterSpacing,
+			WordSpacing:   wordSpacing,
+			SyntheticBold: bold, SyntheticItalic: italic,
+		})
+		currentX += segWidth
+	}
+	return b
+}
+
 // DrawTextWithSpacingScale is like DrawTextWithSpacing but also sets HorizontalScale (Tz percent).
 func (b *DocumentBuilder) DrawTextWithSpacingScale(textStr string, x, y float64, fontName string, fontSize float64, color Color, letterSpacing, wordSpacing, horizontalScale float64) *DocumentBuilder {
 	idx := b.lastPageIndex()

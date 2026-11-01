@@ -161,6 +161,18 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   embedded-file (AF) support for PDF/A-3.
 - Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).
 
+- FIXED (proteus-converter thread, 2026-11-01): kerning ignored GPOS, so fonts that kern only there (Carlito,
+  Caladea, most web fonts) measured and drew unkerned text [TestGPOSPairKerning, TestParsePairPosClassBased].
+  Fuzzing then found a hang: `allScriptFeatures` re-scanned every script record per record and read every
+  feature list in full; now distinct scripts/feature tables are read once under a work budget
+  (`featureTables`, `langSysFeatures`). Seed kept in `font/truetype/testdata/fuzz/FuzzParse`.
+- FIXED (same thread): synthetic bold leaked its line width (`w`) into later strokes and stroked with whatever
+  stroke colour was current; it is now wrapped in q/Q with `RG` = text colour and the text-state tracker reset.
+  Fake-bold stroke and oblique shear follow Skia (1/24..1/32 of the size, 0.25 shear) so output matches
+  Chromium. New `DocumentBuilder.DrawTextSynthetic` [TestSyntheticBoldIsIsolated].
+- FIXED (same thread): `sign` test used a fixed signing time that fell outside its freshly generated
+  certificate's validity window once that date passed.
+
 ## Repo / process
 - FIXED 2026-10-31 — `go.sum` was gitignored.
 - FIXED 2026-10-31 — CI: `.github/workflows/go.yml` runs gofmt, vet, `go test -race` (with poppler installed).

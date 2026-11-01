@@ -208,8 +208,8 @@ func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
 		a, b, c, d := cosA, sinA, -sinA, cosA
 		if r.SyntheticItalic {
 			// Combine italic shear with rotation
-			c += 0.33 * a
-			d += 0.33 * b
+			c += syntheticItalicSkew * a
+			d += syntheticItalicSkew * b
 		}
 		btOps = append(btOps, content.Op{
 			Name: "Tm",
@@ -224,7 +224,7 @@ func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
 			Name: "Tm",
 			Args: []model.Object{
 				model.Real(1), model.Real(0),
-				model.Real(0.33), model.Real(1),
+				model.Real(syntheticItalicSkew), model.Real(1),
 				model.Real(r.X), model.Real(r.Y),
 			},
 		})
@@ -247,7 +247,12 @@ func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
 	}
 	btOps = w.ts.apply(btOps, renderMode, hScale, r.LetterSpacing, r.WordSpacing)
 	if r.SyntheticBold {
-		btOps = append(btOps, content.Op{Name: "w", Args: []model.Object{model.Real(size * 0.03)}})
+		// The outline is stroked in the text colour; q/Q keep the line width
+		// and stroke colour from leaking into later drawing.
+		btOps = append([]content.Op{{Name: "q"}, {Name: "RG", Args: []model.Object{
+			model.Real(r.TextColorRGB[0]), model.Real(r.TextColorRGB[1]), model.Real(r.TextColorRGB[2]),
+		}}}, btOps...)
+		btOps = append(btOps, content.Op{Name: "w", Args: []model.Object{model.Real(syntheticBoldStroke(size))}})
 	}
 	opName := "Tj"
 	if useTJ {
@@ -257,6 +262,12 @@ func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
 		content.Op{Name: opName, Args: []model.Object{textArg}},
 		content.Op{Name: "ET", Args: nil},
 	)
+	if r.SyntheticBold {
+		// Q restores the text state and fill colour set inside q, so forget them
+		btOps = append(btOps, content.Op{Name: "Q"})
+		w.ts = textStateTracker{}
+		w.currentColorSet = false
+	}
 	ops = append(ops, btOps...)
 
 	if r.Underline {
@@ -791,4 +802,24 @@ func (t *textStateTracker) apply(ops []content.Op, tr int64, tz, tc, tw float64)
 	}
 	*t = textStateTracker{known: true, tr: tr, tz: tz, tc: tc, tw: tw}
 	return ops
+}
+
+// syntheticItalicSkew is the horizontal shear of synthesised oblique text,
+// the value Skia (and so Chromium) uses.
+const syntheticItalicSkew = 0.25
+
+// syntheticBoldStroke returns the outline stroke width (in points) for
+// synthesised bold text of the given size, following Skia's fake-bold
+// outset: 1/24 of the size at 9px or less, 1/32 at 36px or more,
+// interpolated linearly in between.
+func syntheticBoldStroke(size float64) float64 {
+	px := size / 0.75
+	ratio := 1.0 / 24
+	switch {
+	case px >= 36:
+		ratio = 1.0 / 32
+	case px > 9:
+		ratio = 1.0/24 + (px-9)/(36-9)*(1.0/32-1.0/24)
+	}
+	return size * ratio
 }

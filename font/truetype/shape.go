@@ -102,8 +102,8 @@ func (f *Font) Shape(text string) []font.Glyph {
 		if int(gid) < len(f.glyphWidths) {
 			out[i].Advance = int(f.glyphWidths[gid])
 		}
-		if i > 0 && f.kernPairs != nil {
-			out[i].Kern = int(f.kernPairs[uint32(out[i-1].ID)<<16|uint32(gid)])
+		if i > 0 {
+			out[i].Kern = f.pairKern(out[i-1].ID, gid)
 		}
 	}
 	for i := range out {

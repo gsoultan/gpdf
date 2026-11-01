@@ -77,3 +77,26 @@ func TestLinkAnnotationsHaveNoBorder(t *testing.T) {
 		t.Fatalf("found %d links with /Border [0 0 0], want 2", n)
 	}
 }
+
+// Synthetic bold strokes the outline in the text colour inside q/Q, so the
+// line width and stroke colour do not leak, and the next run resets Tr.
+func TestSyntheticBoldIsIsolated(t *testing.T) {
+	b := doc.New().PageSize(300, 300).AddPage()
+	b.DrawTextSynthetic("Bold", 10, 200, "Helvetica", 12, doc.Color{R: 1}, 0, 0, true, true)
+	b.DrawTextWithSpacing("Plain", 10, 100, "Helvetica", 12, doc.ColorBlack, 0, 0)
+	d, err := b.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := firstPageContent(t, d)
+	bold := ops[:strings.Index(ops, "(Plain)")]
+	for _, want := range []string{"q", "1 0 0 RG", "2 Tr", "0.25 1", "Q"} {
+		if !strings.Contains(bold, want) {
+			t.Fatalf("synthetic run lacks %q:\n%s", want, ops)
+		}
+	}
+	plain := ops[strings.LastIndex(bold, "Q"):]
+	if !strings.Contains(plain[:strings.Index(plain, "(Plain)")], "0 Tr") {
+		t.Fatalf("run after synthetic bold does not reset Tr:\n%s", ops)
+	}
+}
