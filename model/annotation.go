@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // Annotation is a PDF annotation (page or form). Common keys: /Type (/Annot), /Subtype, /Rect, /A, /Dest.

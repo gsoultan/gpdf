@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package style
 
 // ImageAlignment specifies horizontal alignment of an image.

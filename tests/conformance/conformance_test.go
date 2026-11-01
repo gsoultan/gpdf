@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Package conformance_test writes a corpus of documents that exercise every
 // output feature and checks them with the external validators when they are
 // installed: qpdf (file structure, linearization) and veraPDF (PDF/A and

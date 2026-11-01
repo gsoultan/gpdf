@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package reader
 
 // PageLayout groups all positioned text blocks extracted from a single page,

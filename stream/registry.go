@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package stream
 
 // Registry is a mutable map of filter name to Filter. It implements FilterRegistry.

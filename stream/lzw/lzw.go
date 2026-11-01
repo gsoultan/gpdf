@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Package lzw implements the PDF LZWDecode filter (ISO 32000-1 §7.4.4).
 //
 // Go's compress/lzw cannot be used: it has no support for /EarlyChange, and PDF's

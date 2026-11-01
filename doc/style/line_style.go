@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package style
 
 // LineCap controls the shape at the endpoints of open subpaths (PDF J operator).

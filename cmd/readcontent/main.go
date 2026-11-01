@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // readcontent demonstrates Open → ReadContent / ReadImages / ReadLayout / ReadTables → Close.
 //
 // Usage (run from repo root so "CV CONTOH.pdf" is found):
