@@ -8,8 +8,16 @@ import (
 	"github.com/gsoultan/gpdf/model"
 )
 
-// Build returns a Document that can be saved. The document is in-memory.
+// Build returns a Document that can be saved. The document is in-memory; see
+// StreamTo and BuildTo for output that is written as it is built.
 func (b *DocumentBuilder) Build() (Document, error) {
+	if b.stream != nil {
+		return nil, fmt.Errorf("%w: a builder with StreamTo is completed with Finish", ErrStreaming)
+	}
+	return b.build()
+}
+
+func (b *DocumentBuilder) build() (*builtDocument, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -20,6 +28,14 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	b.prepareMetadata()
 	objs := make(map[int]model.Object)
 	nextNum := 1
+	if b.stream != nil {
+		// Numbers below this belong to the images already written.
+		sw, err := b.stream.writer(b)
+		if err != nil {
+			return nil, err
+		}
+		nextNum = sw.NextObjectNumber()
+	}
 
 	catalogNum := nextNum
 	nextNum++
@@ -146,9 +162,10 @@ func (b *DocumentBuilder) Build() (Document, error) {
 		return nil, err
 	}
 	d := &builtDocument{
-		trailer: trailer,
-		objects: objs,
-		size:    nextNum,
+		trailer:         trailer,
+		objects:         objs,
+		size:            nextNum,
+		noObjectStreams: b.noObjectStreams,
 	}
 	if b.pdfa != "" {
 		d.pdfa = true
@@ -216,7 +233,11 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 			contentStreamNum := nextNum
 			nextNum++
 			imageStreamNums := make([]int, len(spec.ImageRuns))
-			for i := range spec.ImageRuns {
+			for i, im := range spec.ImageRuns {
+				if im.ObjNum > 0 {
+					imageStreamNums[i] = im.ObjNum // written already (streaming output)
+					continue
+				}
 				imageStreamNums[i] = nextNum
 				nextNum++
 			}
@@ -237,33 +258,23 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 			if !b.noCompressContent {
 				streamDict[model.Name("Filter")] = model.Name("FlateDecode")
 			}
-			objs[contentStreamNum] = &model.Stream{
-				Dict:    streamDict,
-				Content: contentBytes,
+			contentStream := &model.Stream{Dict: streamDict, Content: contentBytes}
+			if b.stream != nil {
+				if err := b.stream.writeObject(b, contentStreamNum, contentStream); err != nil {
+					return nextNum, err
+				}
+			} else {
+				objs[contentStreamNum] = contentStream
 			}
 			for i, im := range spec.ImageRuns {
-				// Create the main image XObject stream
-				var imgStream *model.Stream
-				if im.IsJPEG {
-					imgStream = b.jpegXObjectStream(im)
-				} else {
-					imgStream = b.imageXObjectStream(im)
+				if im.ObjNum > 0 {
+					continue
 				}
-				// If this image has a soft mask, allocate and write it, and link via /SMask
-				if im.HasMask && len(im.Mask) > 0 && im.MaskWidth > 0 && im.MaskHeight > 0 {
+				imgStream, maskStream := b.imageStreams(im)
+				if maskStream != nil {
 					maskNum := nextNum
 					nextNum++
-					maskDict := model.Dict{
-						model.Name("Type"):             model.Name("XObject"),
-						model.Name("Subtype"):          model.Name("Image"),
-						model.Name("Width"):            model.Integer(int64(im.MaskWidth)),
-						model.Name("Height"):           model.Integer(int64(im.MaskHeight)),
-						model.Name("BitsPerComponent"): model.Integer(8),
-						model.Name("ColorSpace"):       model.Name("DeviceGray"),
-						model.Name("Filter"):           model.Name("FlateDecode"),
-						model.Name("Length"):           model.Integer(int64(len(im.Mask))),
-					}
-					objs[maskNum] = &model.Stream{Dict: maskDict, Content: im.Mask}
+					objs[maskNum] = maskStream
 					imgStream.Dict[model.Name("SMask")] = model.Ref{ObjectNumber: maskNum}
 				}
 				objs[imageStreamNums[i]] = imgStream

@@ -62,7 +62,7 @@ func TestLetterSpacingDoesNotLeakIntoNextRun(t *testing.T) {
 
 // Links are drawn without the default 1pt border box.
 func TestLinkAnnotationsHaveNoBorder(t *testing.T) {
-	b := doc.New().PageSize(300, 300).AddPage().AddPage()
+	b := doc.New().PageSize(300, 300).NoObjectStreams().AddPage().AddPage()
 	b.AddLinkToURL(0, 10, 10, 100, 30, "https://example.com")
 	b.AddLinkToPage(0, 10, 40, 100, 60, 1)
 	d, err := b.Build()

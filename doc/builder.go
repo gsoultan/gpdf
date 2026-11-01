@@ -31,6 +31,9 @@ type DocumentBuilder struct {
 	forms     form.Support
 
 	noCompressContent bool
+	noObjectStreams   bool
+	imageCompression  ImageCompression
+	stream            *docStream
 	paintOrder        PaintOrder
 	decorators        []PageDecorator
 	pdfa              PDFALevel
@@ -122,6 +125,15 @@ func (b *DocumentBuilder) SetLanguage(lang string) *DocumentBuilder {
 // NoCompressContent disables FlateDecode compression of page content streams.
 func (b *DocumentBuilder) NoCompressContent() *DocumentBuilder {
 	b.noCompressContent = true
+	return b
+}
+
+// NoObjectStreams writes a classic cross-reference table and no object streams
+// (ISO 32000-2 §7.5.7), the layout every PDF 1.4 reader understands. By default
+// non-stream objects are packed into object streams and the cross-reference is
+// a stream, which makes files smaller.
+func (b *DocumentBuilder) NoObjectStreams() *DocumentBuilder {
+	b.noObjectStreams = true
 	return b
 }
 

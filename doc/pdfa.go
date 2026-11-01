@@ -157,16 +157,19 @@ func (b *DocumentBuilder) checkPDFA(objs map[int]model.Object) error {
 				if t, _ := v[model.Name("Type")].(model.Name); t == "Font" {
 					err = checkPDFAFont(v, objs)
 				}
-			case *model.Stream:
-				if st, _ := v.Dict[model.Name("Subtype")].(model.Name); st == "Image" && rgbIntent {
-					if cs, _ := v.Dict[model.Name("ColorSpace")].(model.Name); cs == "DeviceCMYK" {
-						err = fmt.Errorf("%w: DeviceCMYK image needs a CMYK output intent", ErrPDFA)
-					}
-				}
 			}
 		})
 		if err != nil {
 			return err
+		}
+	}
+	if rgbIntent {
+		for i := range b.pc.pages {
+			for _, im := range b.pc.pages[i].ImageRuns {
+				if im.ColorSpace == "DeviceCMYK" {
+					return fmt.Errorf("%w: DeviceCMYK image needs a CMYK output intent", ErrPDFA)
+				}
+			}
 		}
 	}
 	if b.pdfa == PDFA4F && len(b.attachments) == 0 {

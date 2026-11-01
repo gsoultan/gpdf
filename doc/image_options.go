@@ -53,7 +53,7 @@ func (b *DocumentBuilder) DrawImageWith(opts ImageOptions) *DocumentBuilder {
 		b.setErr(fmt.Errorf("DrawImageWith: %w", err))
 		return b
 	}
-	b.pc.pages[pageIndex].AddImage(run)
+	b.addImage(&b.pc.pages[pageIndex], run)
 	return b
 }
 
@@ -127,7 +127,7 @@ func (b *DocumentBuilder) DrawTaggedImageWith(opts ImageOptions) *DocumentBuilde
 		b.setErr(fmt.Errorf("DrawTaggedImageWith: %w", err))
 		return b
 	}
-	ps.AddImage(run)
+	b.addImage(ps, run)
 	return b
 }
 

@@ -46,7 +46,7 @@ func testCert(t *testing.T, key crypto.Signer, cn string) *x509.Certificate {
 
 func samplePDF(t *testing.T) []byte {
 	t.Helper()
-	b := doc.New().Title("Contract").PageSize(300, 200).AddPage()
+	b := doc.New().Title("Contract").PageSize(300, 200).NoCompressContent().AddPage()
 	b.DrawText("Please sign here", 20, 100, "Helvetica", 12)
 	built, err := b.Build()
 	if err != nil {
@@ -112,7 +112,7 @@ func TestSignAndVerify(t *testing.T) {
 				t.Errorf("untrusted root: %+v", infos[0])
 			}
 			// Tampering with the signed bytes is detected.
-			bad := bytes.Replace(signed, []byte("(Contract)"), []byte("(Contrakt)"), 1)
+			bad := bytes.Replace(signed, []byte("(Please sign here)"), []byte("(Please sign HERE)"), 1)
 			if bytes.Equal(bad, signed) {
 				t.Fatal("tamper target not found")
 			}

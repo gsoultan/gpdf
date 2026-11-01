@@ -274,7 +274,7 @@ func extractImagesFromXObject(
 			if sm, ok := stream.Dict[model.Name("SMask")]; ok {
 				if smStream, _, ok2 := resolveStreamObject(src, sm); ok2 && smStream != nil {
 					image.HasSMask = true
-					image.SMaskData = smStream.Content
+					image.SMaskData, image.SMaskDecoded = decodeSMaskFully(smStream)
 					if w, ok := smStream.Dict[model.Name("Width")].(model.Integer); ok {
 						image.SMaskWidth = int(w)
 					}
@@ -361,6 +361,14 @@ func decodeSMaskFully(smStream *model.Stream) (data []byte, wasDecoded bool) {
 
 	if filterName != "FlateDecode" {
 		return data, false
+	}
+
+	// The document resolver has usually decoded the stream already (filters and
+	// predictor): then the content is exactly one byte per sample.
+	w, _ := smStream.Dict[model.Name("Width")].(model.Integer)
+	h, _ := smStream.Dict[model.Name("Height")].(model.Integer)
+	if w > 0 && h > 0 && int64(len(data)) == int64(w)*int64(h) {
+		return data, true
 	}
 
 	// Decompress with zlib

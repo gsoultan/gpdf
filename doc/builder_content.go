@@ -506,6 +506,9 @@ func (b *DocumentBuilder) imageXObjectStream(im imageRun) *model.Stream {
 		model.Name("Filter"): model.Name("FlateDecode"),
 		model.Name("Length"): model.Integer(int64(len(im.Raw))),
 	}
+	if p := predictorParms(im.ColorSpace, im.BitsPerComponent, im.WidthPx); p != nil {
+		dict[model.Name("DecodeParms")] = p
+	}
 	return &model.Stream{Dict: dict, Content: im.Raw}
 }
 

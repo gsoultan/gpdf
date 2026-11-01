@@ -90,13 +90,19 @@ func TestPDFUA2Document(t *testing.T) {
 	if !bytes.HasPrefix(pdf, []byte("%PDF-2.0")) {
 		t.Errorf("PDF/UA-2 must be PDF 2.0: %q", pdf[:8])
 	}
-	for _, want := range []string{"<pdfuaid:part>2</pdfuaid:part>", "<pdfuaid:rev>2024</pdfuaid:rev>", "/DisplayDocTitle true", "/Artifact BMC", "/Tabs /S"} {
+	for _, want := range []string{"<pdfuaid:part>2</pdfuaid:part>", "<pdfuaid:rev>2024</pdfuaid:rev>", "/Artifact BMC"} {
 		if !bytes.Contains(pdf, []byte(want)) {
 			t.Errorf("output lacks %q", want)
 		}
 	}
 	d := reopen(t, pdf)
 	cat, _ := d.Catalog()
+	if vp := resolveDict(t, d, cat.Dict[model.Name("ViewerPreferences")]); vp[model.Name("DisplayDocTitle")] != model.Boolean(true) {
+		t.Errorf("ViewerPreferences = %v", vp)
+	}
+	if pages, _ := d.Pages(); len(pages) == 0 || pages[0].Dict[model.Name("Tabs")] != model.Name("S") {
+		t.Errorf("page lacks /Tabs /S")
+	}
 	if lang, _ := cat.Dict[model.Name("Lang")].(model.String); lang.Text() != "en-GB" {
 		t.Errorf("Lang = %v", cat.Dict[model.Name("Lang")])
 	}

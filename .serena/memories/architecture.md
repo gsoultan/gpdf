@@ -11,7 +11,7 @@ Layering (low → high). Interfaces sit at the package root; concrete code in `i
 | `security` | Standard handler `StandardDecryptor` (also Encryptor): `standard.go` (dispatch, crypt filters /CF /StmF /StrF, RC4/AES helpers, `ErrWrongPassword`), `standard_legacy.go` (R2-R4 Algorithms 2-7, user+owner auth, EncryptMetadata), `standard_aes256.go` (R5/R6 Alg. 2.A/2.B, `ValidatePerms`). Writers in `standard_write.go`: `BuildEncryptDictForWrite` (V2 R3 RC4-128), `BuildAES256EncryptDictForWrite[WithRandom]` (V5 R6). No external deps. |
 | `reader` | `PDFReader.ReadDocument` → version + linearization detect → `startxref` → `/Prev` chain (table or xref stream, hybrid /XRefStm) → repair scan when that fails or has no /Root (`xref_repair.go`: last definition wins, trailer/Catalog recovery, ObjStm registration) → `pdfDocument` (`document_core.go` resolve/cache/decrypt/objstm, `Generation(num)`, indirect /Length resolver). Text decoding: `extract.go` (ToUnicode tokenizer + codespace) and `text_encoding.go` (simple-font /Encoding, /Differences, glyph names). Extraction: `extract.go` (text, ToUnicode), `extract_layout.go`, `extract_tables.go`, `extract_images.go`, `extract_vectors.go`, `replace.go`. Options/limits in `options.go` (max decoded stream size, filter chain length, object count, cache size). |
 | `reader/file` | `file.Document`: wraps a reader doc + `writer.PDFWriter` for Save / SaveWithPassword / SaveWithAES256Password / SaveLinearized. |
-| `writer` | `PDFWriter.Write` (full rewrite, xref table, real generations via optional `Generation(num)`, clean trailer, skips source Encrypt/XRef/ObjStm objects, filter chains re-encoded, sorted keys, `model.FormatReal`), `WriteIncremental`, `WriteLinearized` (no hint stream), encrypted variants, `graph_validation.go` (refs must resolve; disabled for files read from disk, where dangling refs are written as null). |
+| `writer` | `PDFWriter.Write` (full rewrite; by default `packer` (`objstm.go`) puts non-stream gen-0 objects into /ObjStm of ≤100 and writes a /XRef stream (W [1 4 2], Predictor 12), `ObjectStreams=false` or a 1.4 header gives the classic table; real generations via optional `Generation(num)`, clean trailer, skips source Encrypt/XRef/ObjStm objects, filter chains re-encoded with the requested predictor (`predictor.Encode`), sorted keys, `model.FormatReal`), `WriteIncremental` (xref stream when the base trailer is /Type /XRef, else table), `WriteLinearized` (hint stream), encrypted variants (object streams encrypted whole, strings inside not), `StreamWriter` (`stream_writer.go`: Alloc/WriteObject/Close straight to an io.Writer; packed objects held until Close, deferred packer numbering), `graph_validation.go` (refs must resolve; disabled for files read from disk, where dangling refs are written as null). |
 | `content` + `content/impl` | Content-stream tokenizer/parser (`Op`) and encoder. |
 | `font`, `font/truetype`, `font/shaping`, `font/system` | Standard-14 metrics and the `Font`/`EmbeddableFont`/`Shaper`/`GlyphEncoder`/`CFFFont` interfaces; `truetype`: TrueType and OpenType-CFF parsing (`cff.go`), subsetting (CFF embedded whole), GSUB (liga/clig/rlig ligatures, Arabic init/medi/fina), `Shape` (forms, ligatures, kerning → `font.Glyph`), ToUnicode by rune or by glyph; `shaping`: UAX #9 bidi `Reorder`/`Levels`, `Mirror`, Arabic `JoiningTypeOf`/`ArabicForms`/presentation forms; `system`: font directory scanners, `StandardSubstitutes` (standard-14 → Liberation/Nimbus/...), `Fallback` (installed font covering a rune). |
 | `xobject` | Image/form XObject helpers. |
@@ -22,12 +22,20 @@ Layering (low → high). Interfaces sit at the package root; concrete code in `i
 
 Key flows
 - Open: `doc.Open` → `reader/file` → `reader.PDFReader` → `documentCore.Resolve` (parse at xref offset, decrypt strings/streams per object, decode filters, cache with FIFO limit).
-- Save: `file.Document.Save` → `writer.Write` resolves each object with its real generation and rewrites streams, re-encoding the full `/Filter` chain (Flate/LZW without predictor).
+- Save: `file.Document.Save` → `writer.Write` resolves each object with its real generation and rewrites streams, re-encoding the full `/Filter` chain (Flate/LZW with the predictor their /DecodeParms ask for). `builtDocument.newWriter` passes `NoObjectStreams()` through as `WriterOptions.ObjectStreams=false`.
 - Merge/Split/Extract: `copyPages` (`doc/page_copier.go`) reserves numbers for selected pages, drops /Parent /StructParents /B, and `objectCloner` deep-copies the rest (refs to unselected Page/Pages become null) into a fresh `builtDocument`.
 - Builder paint: `buildPageContent` uses `buildGraphicsOps`/`buildTextOps`/`buildImageOps` (layered, default) or
   `buildOpsInCallOrder` (`doc/paint_order.go`, sorted by run `Seq`); both go through `textOpsWriter` and
   `imageOpsWriter`. In call order, the text writer forgets its color/text state after each graphic run.
-- Builder images: PNG → `image.DecodePNG` → `ImageRun.SetPNG` (alpha as /SMask); raw images and masks are FlateDecode.
+- Builder images: every image goes through `DocumentBuilder.addImage` (`builder_image.go`): `prepareImage`
+  (`image_compression.go`: `CompressImages` → MaxDPI box downsampling of raw/JPEG samples and masks, JPEGQuality
+  re-encoding of 8-bit gray/RGB without mask) then, in streaming mode, `docStream.writeImage`. PNG →
+  `image.DecodePNG` → `ImageRun.SetPNG` (alpha as /SMask); raw images and masks are FlateDecode with
+  `predictorParms` (Predictor 15); `imageStreams` builds image + mask streams for Build and streaming alike.
+- Streaming output (`doc/streaming.go`): `StreamTo(w)` sets `b.stream`; images are written when drawn
+  (`ImageRun.ObjNum/MaskObjNum`, samples released), `build()` starts numbering at `StreamWriter.NextObjectNumber()`
+  and writes content streams at once, `Finish()` writes the remaining objects and closes; `BuildTo(w)` = both.
+  `Build()` is refused after `StreamTo`; changing PDFA/PDFUA after the first write is an `ErrStreaming` error.
 - Builder text: `fontConfig.resolveFont` (`doc/font_config.go`) reorders each line with `shaping.Reorder`, splits
   runs by font (primary → block fallback → fallback chain → system fallback, registering fonts on the fly), and
   shapes segments whose font is a `font.Shaper` (RTL runs get reversed glyphs). `fontSegment.glyphs` →
@@ -58,4 +66,4 @@ Key flows
   (name tree + /AF), `pdfDocument.EffectiveVersion` (header vs catalog /Version), R6 passwords via `security.saslprep`.
 - Builder text: `buildTextOps` tracks Tc/Tw/Tz/Tr (`textStateTracker`) so text state never leaks between runs; links get /Border [0 0 0].
 
-Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-10-31 the graph is built from 036d17f and is stale for the fix branch: graphify was not installable in that session, so rerun `graphify update .`.
+Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-11-01 the graph is built from 036d17f and is stale for the roadmap branch (phases 1–4): graphify was not installable in those sessions (no network for pip), so rerun `graphify update .`.

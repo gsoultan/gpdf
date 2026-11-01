@@ -15,7 +15,7 @@ import (
 
 // pdfText extracts the text of pdf with pdftotext, or returns "" when it is
 // not installed.
-func pdfText(t *testing.T, pdf []byte) string {
+func pdfText(t *testing.T, pdf []byte, args ...string) string {
 	t.Helper()
 	bin, err := exec.LookPath("pdftotext")
 	if err != nil {
@@ -23,7 +23,7 @@ func pdfText(t *testing.T, pdf []byte) string {
 	}
 	path := filepath.Join(t.TempDir(), "x.pdf")
 	os.WriteFile(path, pdf, 0o600)
-	out, err := exec.Command(bin, path, "-").CombinedOutput()
+	out, err := exec.Command(bin, append(args, path, "-")...).CombinedOutput()
 	if err != nil {
 		t.Errorf("pdftotext: %v\n%s", err, out)
 	}
@@ -93,7 +93,7 @@ func TestEmbedStandardFontsPDFA(t *testing.T) {
 	if _, ok := system.DefaultStandardSubstitutes()["Helvetica"]; !ok {
 		t.Skip("no Helvetica substitute installed")
 	}
-	b := doc.New().EmbedStandardFonts().PDFA(doc.PDFA2B).AddPage()
+	b := doc.New().EmbedStandardFonts().PDFA(doc.PDFA2B).NoObjectStreams().AddPage()
 	b.DrawText("PDF/A with Helvetica", 20, 700, "Helvetica", 12)
 	pdf := savePDF(t, b)
 	if !bytes.Contains(pdf, []byte("/FontFile2")) {
@@ -110,7 +110,7 @@ func TestEmbedOpenTypeCFF(t *testing.T) {
 	if !f.IsCFF() {
 		t.Fatalf("%s should have CFF outlines", f.PostScriptName())
 	}
-	b := doc.New().RegisterFont(f).PageSize(300, 150).AddPage()
+	b := doc.New().RegisterFont(f).PageSize(300, 150).NoObjectStreams().AddPage()
 	b.DrawText("OpenType CFF 123", 20, 80, f.PostScriptName(), 16)
 	pdf := savePDF(t, b)
 
@@ -187,7 +187,7 @@ func TestSystemFontFallback(t *testing.T) {
 	if system.DefaultFallback().FontFor('語') == nil {
 		t.Skip("no installed font covers CJK")
 	}
-	b := doc.New().EnableSystemFontFallback().PageSize(300, 150).AddPage()
+	b := doc.New().EnableSystemFontFallback().PageSize(300, 150).NoObjectStreams().AddPage()
 	b.DrawText("Fallback 日本語 text", 20, 80, "Helvetica", 14)
 	pdf := savePDF(t, b)
 	for _, w := range b.Warnings() {

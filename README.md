@@ -32,6 +32,12 @@ A library for reading, searching, and modifying PDF documents.
   decorative graphics and headers/footers, the PDF 2.0 structure namespace for PDF/UA-2, and build-time checks
   (untagged content, missing alternative text, skipped heading levels, unembedded fonts).
 - **PDF/A**: `PDFA(doc.PDFA2B | PDFA3B | PDFA4 | PDFA4E | PDFA4F)` with sRGB output intent and XMP identification.
+- **Compact and streaming output**: files use object streams and a cross-reference stream by default
+  (`NoObjectStreams()` or `writer.WriterOptions.ObjectStreams` for the classic table); image samples are
+  Flate-compressed with a PNG predictor, and `CompressImages(doc.ImageCompression{MaxDPI, JPEGQuality})`
+  downsamples or re-encodes images as JPEG. `StreamTo(w)` + `Finish()` (or `BuildTo(w)`) write images and page
+  content as they are produced, so memory does not grow with the images; `writer.NewStreamWriter` does the same
+  for any object graph.
 
 ## Usage
 
@@ -133,6 +139,19 @@ defer extracted.Close()
 f, _ := os.Create("extracted.pdf")
 extracted.Save(f)
 f.Close()
+```
+
+### Streaming a large document
+
+```go
+f, _ := os.Create("catalogue.pdf")
+b := doc.New().StreamTo(f).CompressImages(doc.ImageCompression{MaxDPI: 200, JPEGQuality: 85})
+for _, item := range items {
+    b.AddPage()
+    b.DrawPNG(36, 400, 300, 300, item.PNG) // written to f now, samples released
+    b.DrawParagraph(b.PageCount()-1, item.Text, 36, 380, "Helvetica", 11)
+}
+err := b.Finish() // pages, fonts, structure and the cross-reference
 ```
 
 ### Merging from Remote Sources (URL/S3)

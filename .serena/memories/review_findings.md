@@ -121,9 +121,20 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   reordering, no mark positioning/GPOS); bidi ignores explicit embedding/isolate controls; Symbol/ZapfDingbats
   substitutes need URW base35 (`StandardSymbolsPS`, `D050000L`) installed.
 - Signature limits: time-stamp tokens are embedded but their own signature is not checked; no OCSP/CRL fetching
-  (caller passes DER data to AddValidationData); incremental update writes an xref table even after an xref stream;
-  signing an encrypted file is refused.
-- Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
+  (caller passes DER data to AddValidationData); signing an encrypted file is refused.
+- DONE (roadmap phase 4, 2026-11-01): object streams + cross-reference stream are the writer default
+  (`WriterOptions.ObjectStreams`, builder `NoObjectStreams()`; 1.4 headers and linearized output keep the table;
+  encrypted files pack too, strings inside ObjStm unencrypted per §7.6.2); `WriteIncremental` follows the base
+  xref form; Flate/LZW re-encoding applies the requested predictor (`predictor.Encode`, PNG 10–15 and TIFF 2);
+  raw images and soft masks get Predictor 15; `CompressImages(ImageCompression{MaxDPI, JPEGQuality})`;
+  `writer.StreamWriter` and builder `StreamTo`/`Finish`/`BuildTo`. Reader fix: `decodeSMaskFully` now recognises
+  already-decoded mask content (`SMaskDecoded` was false for Flate+predictor masks).
+- Streaming limits: no encryption or linearization in streaming mode; the builder still keeps text runs and page
+  specs until Finish (only image samples and content streams are released early); no dangling-reference check.
+- Image compression limits: downsampling handles 8-bit samples only; CMYK JPEGs that are downsampled are stored
+  as Flate CMYK (Go's encoder has no CMYK JPEG); no JPEG 2000, no recompression of images in opened files.
+- Writer always re-encodes Flate content (no pass-through of the original compressed bytes). Tests that grep the
+  raw output for dictionary text need `NoObjectStreams()` (dicts live in compressed object streams otherwise).
 - PDF/A: only level B of parts 2 and 3; checks cover fonts, CMYK and encryption, not everything veraPDF checks
   (no veraPDF available here). Not done: PDF/A-1, level A/U, embedded-file (AF) support for PDF/A-3.
 - Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).

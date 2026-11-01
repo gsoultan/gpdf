@@ -63,3 +63,33 @@ func TestDecodeRejectsBadParams(t *testing.T) {
 		t.Fatal("expected error for unknown PNG filter type")
 	}
 }
+
+func TestEncodeRoundTrip(t *testing.T) {
+	data := make([]byte, 0, 7*9)
+	for i := range 7 * 9 {
+		data = append(data, byte(i*37+(i/9)*11))
+	}
+	for _, p := range []Params{
+		{Predictor: 2, Colors: 3, BitsPerComponent: 8, Columns: 3},
+		{Predictor: 2, Colors: 1, BitsPerComponent: 16, Columns: 4},
+		{Predictor: 10, Colors: 1, BitsPerComponent: 8, Columns: 9},
+		{Predictor: 11, Colors: 3, BitsPerComponent: 8, Columns: 3},
+		{Predictor: 12, Colors: 1, BitsPerComponent: 8, Columns: 9},
+		{Predictor: 13, Colors: 1, BitsPerComponent: 8, Columns: 7},
+		{Predictor: 14, Colors: 3, BitsPerComponent: 8, Columns: 3},
+		{Predictor: 15, Colors: 3, BitsPerComponent: 8, Columns: 3},
+		{Predictor: 15, Colors: 1, BitsPerComponent: 1, Columns: 50},
+	} {
+		enc, err := Encode(data, p)
+		if err != nil {
+			t.Fatalf("%+v: encode: %v", p, err)
+		}
+		dec, err := Decode(enc, p)
+		if err != nil {
+			t.Fatalf("%+v: decode: %v", p, err)
+		}
+		if string(dec) != string(data) {
+			t.Fatalf("%+v: round trip mismatch", p)
+		}
+	}
+}
