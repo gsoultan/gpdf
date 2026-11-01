@@ -31,11 +31,11 @@ func testCert(t *testing.T, key crypto.Signer, cn string) *x509.Certificate {
 		Subject:      pkix.Name{CommonName: cn, Organization: []string{"gPDF tests"}},
 		// Fixed start so the certificate covers the fixed SigningTime used by
 		// TestSignAndVerify whatever day the tests run.
-		NotBefore:    time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-		IsCA:         true, BasicConstraintsValid: true,
+		NotBefore:   time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		IsCA:        true, BasicConstraintsValid: true,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
 	if err != nil {
