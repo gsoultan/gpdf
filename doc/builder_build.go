@@ -106,6 +106,10 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	if b.metadata.Lang != "" {
 		catalogDict[model.Name("Lang")] = model.String(b.metadata.Lang)
 	}
+	if b.pdfua != "" {
+		// PDF/UA: viewers show the document title, not the file name.
+		catalogDict[model.Name("ViewerPreferences")] = model.Dict{model.Name("DisplayDocTitle"): model.Boolean(true)}
+	}
 
 	nextNum = b.buildCatalogExtras(objs, catalogDict, pageNums, nextNum)
 	nextNum = b.buildAttachments(objs, catalogDict, pageNums, nextNum)
@@ -138,6 +142,9 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	if err := b.checkPDFA(objs); err != nil {
 		return nil, err
 	}
+	if err := b.checkPDFUA(objs); err != nil {
+		return nil, err
+	}
 	d := &builtDocument{
 		trailer: trailer,
 		objects: objs,
@@ -146,6 +153,8 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	if b.pdfa != "" {
 		d.pdfa = true
 		d.version = b.pdfa.PDFVersion()
+	} else if v := b.pdfuaVersion(); v != "" {
+		d.version = v
 	}
 	return d, nil
 }
@@ -269,6 +278,10 @@ func (b *DocumentBuilder) buildPageObjects(objs map[int]model.Object, pageNums [
 		}
 		if len(annotRefs) > 0 {
 			pageDict[model.Name("Annots")] = annotRefs
+			if b.useTagged {
+				// Tab order follows the structure tree (PDF/UA requires /Tabs on pages with annotations).
+				pageDict[model.Name("Tabs")] = model.Name("S")
+			}
 		}
 
 		objs[pageNum] = pageDict

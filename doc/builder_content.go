@@ -16,9 +16,38 @@ import (
 func (b *DocumentBuilder) buildGraphicsOps(page *pageSpec, pageHeight float64) []content.Op {
 	var ops []content.Op
 	for _, gr := range page.GraphicRuns {
-		ops = append(ops, gr.Ops...)
+		ops = b.appendGraphicOps(ops, gr.Ops)
 	}
 	return ops
+}
+
+// appendGraphicOps appends a graphic run's ops. In a PDF/UA document vector graphics
+// are decorative, so a run whose marked-content operators are balanced is wrapped in
+// an Artifact sequence (runs that open or close a layer are left as they are).
+func (b *DocumentBuilder) appendGraphicOps(ops []content.Op, run []content.Op) []content.Op {
+	if b.pdfua == "" || len(run) == 0 || !balancedMarkedContent(run) {
+		return append(ops, run...)
+	}
+	ops = append(ops, content.Op{Name: "BMC", Args: []model.Object{model.Name("Artifact")}})
+	ops = append(ops, run...)
+	return append(ops, content.Op{Name: "EMC"})
+}
+
+// balancedMarkedContent reports whether every BDC/BMC in ops has its EMC.
+func balancedMarkedContent(ops []content.Op) bool {
+	depth := 0
+	for _, op := range ops {
+		switch op.Name {
+		case "BDC", "BMC":
+			depth++
+		case "EMC":
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
 }
 
 // buildTextOps returns content stream ops from text runs and a font resource map (baseName -> resName).

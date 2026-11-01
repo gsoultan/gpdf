@@ -63,7 +63,7 @@ func (b *DocumentBuilder) buildOpsInCallOrder(page *pageSpec, imageStreamNums []
 	for _, r := range runs {
 		switch r.kind {
 		case graphicKind:
-			ops = append(ops, page.GraphicRuns[r.index].Ops...)
+			ops = b.appendGraphicOps(ops, page.GraphicRuns[r.index].Ops)
 			// Graphics may set the fill color or text state (e.g. inside an unbalanced
 			// marked-content or layer run), so the next text run sets its own again.
 			tw.forget()

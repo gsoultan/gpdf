@@ -35,6 +35,11 @@ Key flows
   tracks glyph → text for ToUnicode. Standard names map to embedded programs through `aliasedFont`
   (`registerFontAs`), whose `EmbeddedFontName` becomes the subset BaseFont. Inline simple-font dicts are turned
   into shared indirect objects at the end of Build (`indirectStandardFonts`).
+- Tagged PDF (`doc/tagged`): the builder records Blocks/Figures/Tables/Lists plus `Order`/`Section.Kids` (reading
+  order); `BuildStructure` writes MarkInfo, StructTreeRoot (K = one Document element), Sect/P/Hn/L(LI>Lbl,LBody)/
+  Table(TR>TH,TD)/Figure/Link elements, the ParentTree (per-page arrays, then annotation keys, `ParentTreeNextKey`),
+  and with `UseNamespaces` the PDF 2.0 namespace objects. PDF/UA lives in `doc/pdfua.go` (`PDFUA`, `checkPDFUA`);
+  `appendGraphicOps` wraps decorative graphics as artifacts in PDF/UA output.
 - Builder page decorators (`doc/page_decoration.go`): `OnEveryPage`/`SetHeader`/`SetFooter` run inside Build with the
   final page count (runs added are removed again after Build, so Build is repeatable); output is a pagination artifact.
 - PDF/A (`doc/pdfa.go`): `PDFA(PDFA2B|PDFA3B)` → `preparePDFA` (sRGB ICC from `style.SRGBICCProfile`, XMP from

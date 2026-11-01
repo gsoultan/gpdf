@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"fmt"
 	bldrgfx "github.com/gsoultan/gpdf/doc/builder/graphics"
 	bldrimg "github.com/gsoultan/gpdf/doc/builder/imgdraw"
 	bldrtext "github.com/gsoultan/gpdf/doc/builder/text"
@@ -33,6 +34,7 @@ type DocumentBuilder struct {
 	paintOrder        PaintOrder
 	decorators        []PageDecorator
 	pdfa              PDFALevel
+	pdfua             PDFUALevel
 	iccProfile        *ICCProfile
 	attachments       []Attachment
 	pageIntents       []pageOutputIntent
@@ -332,6 +334,7 @@ func (b *DocumentBuilder) AddLinkToPage(pageIndex int, llx, lly, urx, ury float6
 	}
 	b.outlines.LinkAnnots = append(b.outlines.LinkAnnots, outline.LinkAnnotation{
 		PageIndex: pageIndex, Rect: [4]float64{llx, lly, urx, ury}, DestPage: destPageIndex,
+		Contents: fmt.Sprintf("Go to page %d", destPageIndex+1),
 	})
 	return b
 }
@@ -343,6 +346,7 @@ func (b *DocumentBuilder) AddLinkToDest(pageIndex int, llx, lly, urx, ury float6
 	}
 	b.outlines.LinkAnnots = append(b.outlines.LinkAnnots, outline.LinkAnnotation{
 		PageIndex: pageIndex, Rect: [4]float64{llx, lly, urx, ury}, DestPage: -1, DestName: destName,
+		Contents: "Go to " + destName,
 	})
 	return b
 }
@@ -354,6 +358,7 @@ func (b *DocumentBuilder) AddLinkToURL(pageIndex int, llx, lly, urx, ury float64
 	}
 	b.outlines.LinkAnnots = append(b.outlines.LinkAnnots, outline.LinkAnnotation{
 		PageIndex: pageIndex, Rect: [4]float64{llx, lly, urx, ury}, DestPage: -1, URL: url,
+		Contents: url,
 	})
 	return b
 }
@@ -392,14 +397,13 @@ func (b *DocumentBuilder) AddNamedDest(name string, pageIndex int) *DocumentBuil
 // BeginSection starts a logical section for tagged content.
 func (b *DocumentBuilder) BeginSection() *DocumentBuilder {
 	b.useTagged = true
-	b.tagging.Sections = append(b.tagging.Sections, taggedpkg.Section{})
-	b.tagging.CurrentSection = len(b.tagging.Sections) - 1
+	b.tagging.BeginSection()
 	return b
 }
 
 // EndSection ends the current section started by BeginSection.
 func (b *DocumentBuilder) EndSection() *DocumentBuilder {
-	b.tagging.CurrentSection = -1
+	b.tagging.EndSection()
 	return b
 }
 

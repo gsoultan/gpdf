@@ -26,6 +26,11 @@ A library for reading, searching, and modifying PDF documents.
   (`RegisterBlockFallbackFont`, `EnableSystemFontFallback`), and text shaping: Unicode bidi (UAX #9) reordering,
   bracket mirroring, Arabic joining through the font's GSUB init/medi/fina features (presentation forms as a
   fallback), ligatures and kerning, with a ToUnicode CMap that maps shaped glyphs back to their text.
+- **Tagged PDF and PDF/UA**: structure tree in reading order (headings, paragraphs, lists with Lbl/LBody, tables
+  with header scope, figures with alternative text, sections, Link elements for link annotations), and
+  `PDFUA(doc.PDFUA1 | PDFUA2)` for ISO 14289 output: pdfuaid metadata, displayed title, language, artifacts for
+  decorative graphics and headers/footers, the PDF 2.0 structure namespace for PDF/UA-2, and build-time checks
+  (untagged content, missing alternative text, skipped heading levels, unembedded fonts).
 - **PDF/A**: `PDFA(doc.PDFA2B | PDFA3B | PDFA4 | PDFA4E | PDFA4F)` with sRGB output intent and XMP identification.
 
 ## Usage

@@ -843,7 +843,7 @@ func (b *DocumentBuilder) DrawListEnhanced(pageIndex int, items []string, x, y, 
 			HasMCID:         true,
 		})
 
-		listItems = append(listItems, taggedpkg.ListItem{MCID: mcidText}) // Simplification: only track text
+		listItems = append(listItems, taggedpkg.ListItem{MCID: mcidText, LabelMCID: mcidMarker, HasLabel: true})
 	}
 
 	if len(listItems) > 0 {

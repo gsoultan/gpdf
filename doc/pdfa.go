@@ -113,6 +113,12 @@ func (b *DocumentBuilder) xmpInput() metadata.XMPInput {
 			in.PDFARev = "2020"
 		}
 	}
+	if b.pdfua != "" {
+		in.PDFUAPart = string(b.pdfua)
+		if b.pdfua == PDFUA2 {
+			in.PDFUARev = "2024"
+		}
+	}
 	return in
 }
 
@@ -121,11 +127,14 @@ func (b *DocumentBuilder) xmpInput() metadata.XMPInput {
 // §14.3.3), so the builder always mirrors them into /Metadata.
 func (b *DocumentBuilder) prepareMetadata() {
 	b.metadata.PDF20 = b.pdfa == "" || b.pdfa.pdf20()
+	if b.pdfua == PDFUA1 && !(b.pdfa != "" && b.pdfa.pdf20()) {
+		b.metadata.PDF20 = false // PDF/UA-1 files are PDF 1.7
+	}
 	if b.pdfa != "" {
 		b.preparePDFA()
 		return
 	}
-	if len(b.metadata.MetadataXMP) == 0 && (b.metadata.HasFields() || !b.metadata.CreationDate.IsZero()) {
+	if len(b.metadata.MetadataXMP) == 0 && (b.metadata.HasFields() || !b.metadata.CreationDate.IsZero() || b.pdfua != "") {
 		b.metadata.MetadataXMP = metadata.BuildXMP(b.xmpInput())
 	}
 }

@@ -16,6 +16,9 @@ type XMPInput struct {
 	// PDFAPart and PDFAConformance fill the pdfaid schema ("2", "B"). Empty leaves it out.
 	// PDFARev is the pdfaid:rev year for PDF/A-4 ("2020"), which has no conformance level.
 	PDFAPart, PDFAConformance, PDFARev string
+	// PDFUAPart fills the pdfuaid schema ("1" or "2"); PDFUARev is the pdfuaid:rev
+	// year for PDF/UA-2 ("2024").
+	PDFUAPart, PDFUARev string
 }
 
 // BuildXMP returns an XMP metadata packet. The values mirror the Info dictionary, as
@@ -37,6 +40,13 @@ func BuildXMP(in XMPInput) []byte {
 		}
 		if in.PDFAConformance != "" {
 			fmt.Fprintf(&b, "   <pdfaid:conformance>%s</pdfaid:conformance>\n", esc(in.PDFAConformance))
+		}
+		b.WriteString("  </rdf:Description>\n")
+	}
+	if in.PDFUAPart != "" {
+		fmt.Fprintf(&b, "  <rdf:Description rdf:about=\"\" xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">\n   <pdfuaid:part>%s</pdfuaid:part>\n", esc(in.PDFUAPart))
+		if in.PDFUARev != "" {
+			fmt.Fprintf(&b, "   <pdfuaid:rev>%s</pdfuaid:rev>\n", esc(in.PDFUARev))
 		}
 		b.WriteString("  </rdf:Description>\n")
 	}

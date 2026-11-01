@@ -106,6 +106,17 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   Fixed on the way: ligature glyphs were not in the subset (Encode applied them, markText did not), every GSUB
   type-4 lookup was applied (now only liga/clig/rlig), and inline Type1 font dicts in page resources made poppler's
   pdffonts report an internal error (now shared indirect objects, `indirectStandardFonts`).
+- DONE (roadmap phase 3, 2026-11-01): tagged structure now follows reading order (`tagged.Support.Order` /
+  `Section.Kids` of `ElemRef`, recorded by `RecordSection*`; older index slices kept), list items are LI > Lbl + LBody,
+  the identity RoleMap is gone, link annotations get Link elements with OBJR + /StructParent (`TagAnnotations`),
+  PDF 2.0 namespaces (`UseNamespaces`: /Namespaces on the root, /NS on every element; Quote/Code and other dropped
+  types go to the PDF 1.7 namespace). `PDFUA(PDFUA1|PDFUA2)` (`doc/pdfua.go`): pdfuaid XMP (part, rev 2024),
+  ViewerPreferences DisplayDocTitle, /Tabs /S on pages with annotations, graphic runs wrapped as Artifact when
+  balanced, /Contents on link annotations, header 1.7 for UA-1 / 2.0 for UA-2, standard fonts auto-embedded,
+  `checkPDFUA` (title, language, untagged text/images, figure Alt, heading levels, embedded fonts, UA-2 vs PDF/A-2/3).
+- PDF/UA limits: no veraPDF run here (not installable); not checked: table header associations beyond Scope,
+  contrast, Unicode mapping of every glyph (ToUnicode is always written), form field labels, bookmarks for long
+  documents. Flow/table text inside tagged documents is tagged as P/TD automatically, free `DrawText` is not.
 - Font limits: CFF programs are embedded whole (no CFF subsetting); shaping covers Arabic joining only (no Indic
   reordering, no mark positioning/GPOS); bidi ignores explicit embedding/isolate controls; Symbol/ZapfDingbats
   substitutes need URW base35 (`StandardSymbolsPS`, `D050000L`) installed.

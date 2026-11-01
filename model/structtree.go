@@ -38,3 +38,14 @@ func (s *StructTreeRoot) RoleMap() Dict {
 	}
 	return nil
 }
+
+// Namespaces returns the /Namespaces array (PDF 2.0 structure namespaces) if present.
+func (s *StructTreeRoot) Namespaces() Array {
+	if s == nil || s.Dict == nil {
+		return nil
+	}
+	if v, ok := s.Dict[Name("Namespaces")].(Array); ok {
+		return v
+	}
+	return nil
+}
