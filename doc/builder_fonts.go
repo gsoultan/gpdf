@@ -171,7 +171,7 @@ func buildEmbeddedFontObjects(
 	if withCIDSet {
 		cidSetNum := *nextNum
 		*nextNum++
-		cidSet := buildCIDSet(usage.usedGIDs)
+		cidSet := buildCIDSet(programGlyphs(ef, usage.usedGIDs, cffProgram != nil))
 		objs[cidSetNum] = &model.Stream{
 			Dict:    model.Dict{model.Name("Length"): model.Integer(int64(len(cidSet))), model.Name("Filter"): model.Name("FlateDecode")},
 			Content: cidSet,
@@ -311,6 +311,26 @@ func randomSubsetTag() string {
 		tag[i] = 'A' + (b[i/2]>>(4*(1-uint(i%2))))&0x0F%26
 	}
 	return string(tag)
+}
+
+// programGlyphs returns the glyphs the embedded font program holds, which a
+// CIDSet must list in full (ISO 19005-2 §6.2.11.4.2): every CID of a whole
+// CFF program, or every glyph slot of a TrueType subset.
+func programGlyphs(ef font.EmbeddableFont, used map[uint16]bool, wholeProgram bool) map[uint16]bool {
+	f := unwrapFont(ef)
+	if wholeProgram {
+		if pc, ok := f.(interface{ ProgramCIDs() map[uint16]bool }); ok {
+			if all := pc.ProgramCIDs(); len(all) > 0 {
+				return all
+			}
+		}
+	}
+	if sg, ok := f.(interface {
+		SubsetGlyphs(map[uint16]bool) map[uint16]bool
+	}); ok {
+		return sg.SubsetGlyphs(used)
+	}
+	return used
 }
 
 // buildCIDSet returns a bitmap with one bit per CID, set for the CIDs the subset

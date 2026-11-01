@@ -9,6 +9,10 @@ Standing rules from the owner (2026-10-31):
 Before calling a code task done:
 - `gofmt -l .` is empty, `go vet ./...` and `go test ./...` pass (add `-race` for concurrency changes).
 - Add a regression test for every bug fix; for parser/reader fixes prefer a tiny hand-built PDF in the test (`internal/pdftest`).
-- For writer/encryption changes, check the output with an external reader (`pdfinfo`/`pdftotext`) when available.
+- For writer/encryption changes, check the output with an external reader (`pdfinfo`/`pdftotext`) when available,
+  and run `tests/conformance` with qpdf and veraPDF (see `suggested_commands`); PDF/A, PDF/UA, tagged-PDF and
+  linearization changes must keep every corpus sample passing.
+- For parser/filter/font changes, run the matching fuzz target for a minute; commit any crash input under
+  `testdata/fuzz/` with the fix.
 - Update `review_findings` memory: mark fixed items, add new ones.
 - Attribution: commit as `gsoultan <gembit.shirazi@gmail.com>`, no Claude credit lines anywhere (commits, PR text, comments).

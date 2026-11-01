@@ -81,4 +81,18 @@ Key flows
   (name tree + /AF), `pdfDocument.EffectiveVersion` (header vs catalog /Version), R6 passwords via `security.saslprep`.
 - Builder text: `buildTextOps` tracks Tc/Tw/Tz/Tr (`textStateTracker`) so text state never leaks between runs; links get /Border [0 0 0].
 
-Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-11-01 the graph is built from 036d17f and is stale for the roadmap branch (phases 1–5): graphify was not installable in those sessions (no network for pip), so rerun `graphify update .`.
+- Validation (`tests/conformance/conformance_test.go`): `corpus(t)` builds every output form (`sample{name,
+  flavour, password, pdf}`, flavour = space-separated veraPDF profiles), `corpusDir` writes them (to
+  `GPDF_CONFORMANCE_DIR` if set), `tool(t, name)` finds `qpdf`/`verapdf` (`<NAME>_BIN`, skip or fail under
+  `GPDF_REQUIRE_TOOLS`). Fuzz targets: `syntax/impl` (objects, tokenizer), `content/impl` FuzzParseContent
+  (parse → Encoder → parse), `font/truetype` FuzzParse, `stream` FuzzFilters (filters + predictor round trip),
+  `model` FuzzTextString/FuzzParseDate, `tests/reader` FuzzReadDocument/FuzzRoundTrip (open, extract, save,
+  SaveIncremental, Redact, reopen). Crash inputs are committed under `testdata/fuzz/<Target>/`. Benchmarks in
+  `tests/doc/bench_test.go` (classic vs object streams, StreamTo vs Build, images, linearize, reading order,
+  layout, redact, incremental save, merge) and `tests/reader` (BenchmarkReadDocument).
+- Structure tree parent tree (`doc/tagged/builder.go`): `mcidParents` derives the per-page `/ParentTree` arrays
+  from the MCR kids (index = MCID), `setStructParents` adds `/P` to every element.
+
+Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json`. Rebuilt 2026-11-01 from dff41a7 plus the
+phase 6 tree with `graphify update . --no-cluster` then `graphify cluster-only . --no-label --no-viz` (community
+names are placeholders: no LLM backend here). graphify installs with `pip install graphifyy` (PyPI name).

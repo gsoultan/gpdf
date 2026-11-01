@@ -44,6 +44,10 @@ A library for reading, searching, and modifying PDF documents.
   untagged one); `SetInfo`, `SetObject`, `NewObject` and `Replace` change an opened file and `SaveIncremental`
   appends only those changes, keeping earlier signatures valid; `doc.Redact` removes text by string, pattern or
   area and draws a box over it. Merge, split and page extraction are in `doc.Merge`, `doc.Split`, `doc.Extract`.
+- **Validated output**: CI checks every kind of file the library writes (classic and compressed, encrypted,
+  linearized, streamed, merged, signed, incrementally updated, redacted, PDF/A-2b/3b/4/4f, PDF/UA-1/2) with
+  `qpdf --check` and veraPDF, fuzzes the parsers, filters, fonts and the read/write round trip every night, and
+  reports benchmark changes on pull requests with benchstat (see "Checking conformance" below).
 
 ## Usage
 
@@ -176,6 +180,24 @@ for _, item := range items {
 }
 err := b.Finish() // pages, fonts, structure and the cross-reference
 ```
+
+### Checking conformance
+
+`tests/conformance` writes a corpus of every output form and runs the external validators over it. The tests
+skip when a tool is missing; set `GPDF_REQUIRE_TOOLS=1` (as CI does) to make a missing tool a failure, or point
+`QPDF_BIN` / `VERAPDF_BIN` at a binary. veraPDF runs from the Maven Central `greenfield-apps` jar:
+
+```sh
+sudo apt-get install qpdf
+curl -sSfL -o greenfield-apps.jar \
+  https://repo1.maven.org/maven2/org/verapdf/apps/greenfield-apps/1.28.2/greenfield-apps-1.28.2.jar
+printf '#!/bin/sh\nexec java -cp %s org.verapdf.apps.GreenfieldCliWrapper "$@"\n' "$PWD/greenfield-apps.jar" > verapdf && chmod +x verapdf
+VERAPDF_BIN=$PWD/verapdf GPDF_CONFORMANCE_DIR=/tmp/corpus go test ./tests/conformance -v
+```
+
+`GPDF_CONFORMANCE_DIR` keeps the generated files for inspection. Fuzz targets live next to the code
+(`go test ./content/impl -run '^$' -fuzz FuzzParseContent`), and `go test ./tests/doc ./tests/reader -bench .`
+runs the benchmarks.
 
 ### Merging from Remote Sources (URL/S3)
 

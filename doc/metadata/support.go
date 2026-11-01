@@ -20,8 +20,9 @@ type Support struct {
 	CreationDate time.Time
 	// PDF20 selects the ISO 32000-2 date form and UTF-8 text strings.
 	PDF20 bool
-	// DatesOnly limits the Info dictionary to CreationDate and ModDate (PDF/A-4, where
-	// the other entries are deprecated and the XMP packet carries them).
+	// DatesOnly marks PDF/A-4 output, where the Info dictionary is deprecated
+	// and the XMP packet carries every entry: the builder writes no Info at all
+	// and BuildInfoDict keeps only the dates.
 	DatesOnly bool
 }
 

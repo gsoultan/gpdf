@@ -467,54 +467,35 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 		model.Name("K"):    model.Array{model.Ref{ObjectNumber: documentNum, Generation: 0}},
 	}
 
-	// Parent tree: one array per page with marked content, then one entry per
-	// tagged annotation.
-	hasContent := len(cellElems) > 0 || len(s.Blocks) > 0 || len(s.Lists) > 0 || len(s.Figures) > 0
-	if hasContent || len(annotElems) > 0 {
+	// Parent tree (ISO 32000-2 §14.7.5.4): one array per page with marked
+	// content, indexed by MCID and naming the element that holds that marked
+	// content, then one entry per tagged annotation.
+	pageMCIDs := mcidParents(objs, structTreeNum, nextNum)
+	if len(pageMCIDs) > 0 || len(annotElems) > 0 {
 		parentTreeNum := nextNum
 		nextNum++
-		pageCells := make(map[int]model.Array)
-		for _, ce := range cellElems {
-			pageCells[ce.pageIndex] = append(pageCells[ce.pageIndex],
-				model.Ref{ObjectNumber: ce.objNum, Generation: 0},
-			)
-		}
-		for i, blk := range s.Blocks {
-			if blk.PageIndex < 0 || blk.PageIndex >= len(pageNums) {
-				continue
-			}
-			pageCells[blk.PageIndex] = append(pageCells[blk.PageIndex],
-				model.Ref{ObjectNumber: blockObjNums[i], Generation: 0},
-			)
-		}
-		for i, lst := range s.Lists {
-			if lst.PageIndex < 0 || lst.PageIndex >= len(pageNums) || listObjNums[i] == 0 {
-				continue
-			}
-			for j := range lst.Items {
-				pageCells[lst.PageIndex] = append(pageCells[lst.PageIndex],
-					model.Ref{ObjectNumber: itemObjNums[i][j], Generation: 0},
-				)
-			}
-		}
-		for i, fig := range s.Figures {
-			if figureObjNums[i] == 0 || fig.PageIndex < 0 || fig.PageIndex >= len(pageNums) {
-				continue
-			}
-			pageCells[fig.PageIndex] = append(pageCells[fig.PageIndex],
-				model.Ref{ObjectNumber: figureObjNums[i], Generation: 0},
-			)
-		}
 		var nums model.Array
-		for pageIndex := range pageNums {
-			cellsArr, ok := pageCells[pageIndex]
+		for _, pageNum := range pageNums {
+			parents, ok := pageMCIDs[pageNum]
 			if !ok {
 				continue
 			}
-			nums = append(nums, model.Integer(int64(nextParentKey)), cellsArr)
-			if pd, ok := objs[pageNums[pageIndex]].(model.Dict); ok {
+			maxMCID := -1
+			for mcid := range parents {
+				maxMCID = max(maxMCID, mcid)
+			}
+			arr := make(model.Array, maxMCID+1)
+			for i := range arr {
+				if elem, ok := parents[i]; ok {
+					arr[i] = model.Ref{ObjectNumber: elem, Generation: 0}
+				} else {
+					arr[i] = model.Null{}
+				}
+			}
+			nums = append(nums, model.Integer(int64(nextParentKey)), arr)
+			if pd, ok := objs[pageNum].(model.Dict); ok {
 				pd[model.Name("StructParents")] = model.Integer(int64(nextParentKey))
-				objs[pageNums[pageIndex]] = pd
+				objs[pageNum] = pd
 			}
 			nextParentKey++
 		}
@@ -540,8 +521,45 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 
 	objs[structTreeNum] = structRoot
 	catalogDict[model.Name("StructTreeRoot")] = model.Ref{ObjectNumber: structTreeNum, Generation: 0}
+	setStructParents(objs, structTreeNum)
 
 	return nextNum
+}
+
+// setStructParents gives every structure element reachable from the structure
+// tree root its required /P entry (ISO 32000-2 §14.7.2), the root itself for
+// the top-level elements.
+func setStructParents(objs map[int]model.Object, structTreeNum int) {
+	seen := map[int]bool{}
+	var walk func(num int)
+	walk = func(num int) {
+		if seen[num] {
+			return
+		}
+		seen[num] = true
+		d, ok := objs[num].(model.Dict)
+		if !ok {
+			return
+		}
+		var kids model.Array
+		switch k := d[model.Name("K")].(type) {
+		case model.Array:
+			kids = k
+		case model.Ref:
+			kids = model.Array{k}
+		}
+		for _, k := range kids {
+			ref, ok := k.(model.Ref)
+			if !ok {
+				continue
+			}
+			if kd, ok := objs[ref.ObjectNumber].(model.Dict); ok && kd[model.Name("Type")] == model.Name("StructElem") {
+				kd[model.Name("P")] = model.Ref{ObjectNumber: num, Generation: 0}
+				walk(ref.ObjectNumber)
+			}
+		}
+	}
+	walk(structTreeNum)
 }
 
 // mcr returns a marked-content reference for a sequence on a page.
@@ -592,4 +610,50 @@ func (s *Support) applyNamespaces(objs map[int]model.Object, structRoot model.Di
 	}
 	structRoot[model.Name("Namespaces")] = namespaces
 	return nextNum
+}
+
+// mcidParents maps, per page object number, each MCID to the structure element
+// (object number in [from, to)) whose /K holds its marked-content reference.
+func mcidParents(objs map[int]model.Object, from, to int) map[int]map[int]int {
+	out := map[int]map[int]int{}
+	record := func(pg model.Object, mcid model.Object, elem int) {
+		ref, ok := pg.(model.Ref)
+		n, isInt := mcid.(model.Integer)
+		if !ok || !isInt {
+			return
+		}
+		if out[ref.ObjectNumber] == nil {
+			out[ref.ObjectNumber] = map[int]int{}
+		}
+		out[ref.ObjectNumber][int(n)] = elem
+	}
+	for num := from; num < to; num++ {
+		d, ok := objs[num].(model.Dict)
+		if !ok || d[model.Name("Type")] != model.Name("StructElem") {
+			continue
+		}
+		var kids model.Array
+		switch k := d[model.Name("K")].(type) {
+		case model.Array:
+			kids = k
+		case nil:
+		default:
+			kids = model.Array{k}
+		}
+		for _, k := range kids {
+			switch k := k.(type) {
+			case model.Integer:
+				record(d[model.Name("Pg")], k, num)
+			case model.Dict:
+				if k[model.Name("Type")] == model.Name("MCR") {
+					pg := k[model.Name("Pg")]
+					if pg == nil {
+						pg = d[model.Name("Pg")]
+					}
+					record(pg, k[model.Name("MCID")], num)
+				}
+			}
+		}
+	}
+	return out
 }

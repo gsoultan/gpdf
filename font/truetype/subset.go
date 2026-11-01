@@ -29,24 +29,11 @@ func (f *Font) Subset(usedGlyphIDs map[uint16]bool) ([]byte, error) {
 		return nil, fmt.Errorf("truetype: loca table has too few entries")
 	}
 
-	// Collect component glyphs for composites.
-	allGlyphs := make(map[uint16]bool, len(usedGlyphIDs)+1)
-	allGlyphs[0] = true
-	for gid := range usedGlyphIDs {
-		allGlyphs[gid] = true
-	}
-	for gid := range usedGlyphIDs {
-		f.collectCompositeComponents(glyfData, offsets, gid, allGlyphs)
-	}
+	allGlyphs := f.subsetGlyphs(glyfData, offsets, usedGlyphIDs)
 
 	// Glyph IDs are preserved, so the subset only needs glyphs up to the highest
 	// used one: everything after it is dropped from glyf, loca and hmtx.
-	numGlyphs := 1
-	for gid := range allGlyphs {
-		if int(gid)+1 > numGlyphs && int(gid) < f.numGlyphs {
-			numGlyphs = int(gid) + 1
-		}
-	}
+	numGlyphs := f.subsetGlyphCount(allGlyphs)
 
 	// Build new glyf: keep used glyph data, zero-out unused.
 	var newGlyf []byte
@@ -88,6 +75,60 @@ func (f *Font) parseLocaOffsets(data []byte) []uint32 {
 		}
 	}
 	return offsets
+}
+
+// subsetGlyphs returns the glyphs a subset for usedGlyphIDs holds: the used
+// glyphs, the components of composite ones among them, and .notdef.
+func (f *Font) subsetGlyphs(glyfData []byte, offsets []uint32, usedGlyphIDs map[uint16]bool) map[uint16]bool {
+	allGlyphs := make(map[uint16]bool, len(usedGlyphIDs)+1)
+	allGlyphs[0] = true
+	for gid := range usedGlyphIDs {
+		allGlyphs[gid] = true
+	}
+	for gid := range usedGlyphIDs {
+		f.collectCompositeComponents(glyfData, offsets, gid, allGlyphs)
+	}
+	return allGlyphs
+}
+
+// SubsetGlyphs reports the glyph IDs a subset built for usedGlyphIDs holds
+// (see Subset). Glyph IDs are preserved, so the subset keeps every glyph slot
+// up to the highest used glyph or composite component, and validators count
+// each slot as a glyph of the program: a PDF/A CIDSet must list them all.
+// Fonts without TrueType outlines report the used set plus .notdef.
+func (f *Font) SubsetGlyphs(usedGlyphIDs map[uint16]bool) map[uint16]bool {
+	glyfData, err := f.tableData("glyf")
+	locaData, err2 := f.tableData("loca")
+	if err != nil || err2 != nil {
+		out := make(map[uint16]bool, len(usedGlyphIDs)+1)
+		out[0] = true
+		for gid := range usedGlyphIDs {
+			out[gid] = true
+		}
+		return out
+	}
+	offsets := f.parseLocaOffsets(locaData)
+	if len(offsets) < f.numGlyphs+1 {
+		return map[uint16]bool{0: true}
+	}
+	numGlyphs := f.subsetGlyphCount(f.subsetGlyphs(glyfData, offsets, usedGlyphIDs))
+	out := make(map[uint16]bool, numGlyphs)
+	for gid := range numGlyphs {
+		out[uint16(gid)] = true
+	}
+	return out
+}
+
+// subsetGlyphCount is the glyph count of a subset holding allGlyphs: glyph IDs
+// are preserved, so it runs up to the highest kept glyph.
+func (f *Font) subsetGlyphCount(allGlyphs map[uint16]bool) int {
+	numGlyphs := 1
+	for gid := range allGlyphs {
+		if int(gid)+1 > numGlyphs && int(gid) < f.numGlyphs {
+			numGlyphs = int(gid) + 1
+		}
+	}
+	return numGlyphs
 }
 
 func (f *Font) collectCompositeComponents(glyfData []byte, offsets []uint32, gid uint16, out map[uint16]bool) {

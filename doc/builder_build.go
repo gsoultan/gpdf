@@ -141,19 +141,22 @@ func (b *DocumentBuilder) build() (*builtDocument, error) {
 
 	objs[catalogNum] = catalogDict
 
-	infoNum := nextNum
-	nextNum++
-	objs[infoNum] = b.metadata.BuildInfoDict()
-
-	nextNum = b.metadata.BuildMetadataStream(objs, catalogDict, nextNum)
-
 	trailer := model.Trailer{
 		Dict: model.Dict{
 			model.Name("Root"): model.Ref{ObjectNumber: catalogNum, Generation: 0},
-			model.Name("Size"): model.Integer(nextNum),
-			model.Name("Info"): model.Ref{ObjectNumber: infoNum, Generation: 0},
 		},
 	}
+	// PDF/A-4 (ISO 19005-4 §6.1.3) forbids the Info dictionary unless the catalog
+	// carries PieceInfo; the XMP packet holds the metadata instead.
+	if !b.metadata.DatesOnly {
+		infoNum := nextNum
+		nextNum++
+		objs[infoNum] = b.metadata.BuildInfoDict()
+		trailer.Dict[model.Name("Info")] = model.Ref{ObjectNumber: infoNum, Generation: 0}
+	}
+
+	nextNum = b.metadata.BuildMetadataStream(objs, catalogDict, nextNum)
+	trailer.Dict[model.Name("Size")] = model.Integer(nextNum)
 	encodeTextStrings(objs, b.metadata.PDF20)
 	if err := b.checkPDFA(objs); err != nil {
 		return nil, err

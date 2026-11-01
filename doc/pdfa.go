@@ -90,7 +90,7 @@ func (b *DocumentBuilder) preparePDFA() {
 		b.metadata.CreationDate = time.Now()
 	}
 	if b.pdfa.pdf20() {
-		// PDF/A-4 deprecates the Info dictionary apart from the dates: XMP carries the rest.
+		// PDF/A-4 forbids the Info dictionary (ISO 19005-4 §6.1.3): XMP carries the metadata.
 		b.metadata.DatesOnly = true
 	}
 	if len(b.metadata.MetadataXMP) == 0 {

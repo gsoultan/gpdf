@@ -185,12 +185,12 @@ func TestPDFA4(t *testing.T) {
 	if x, _ := pd.MetadataStream(); strings.Contains(string(x), "pdfaid:conformance") {
 		t.Error("plain PDF/A-4 has no conformance level")
 	}
-	info, _ := d.Info()
-	if _, ok := info[model.Name("Title")]; ok {
-		t.Errorf("PDF/A-4 Info must only carry the dates: %v", info)
+	// ISO 19005-4 §6.1.3: no Info dictionary; the XMP packet carries the dates.
+	if info, _ := d.Info(); info != nil {
+		t.Errorf("PDF/A-4 output must not carry an Info dictionary: %v", info)
 	}
-	if cd, _ := info[model.Name("CreationDate")].(model.String); cd != "D:20261101120000Z" {
-		t.Errorf("CreationDate = %q", cd)
+	if !strings.Contains(string(xmp), "<xmp:CreateDate>2026-11-01T12:00:00Z</xmp:CreateDate>") {
+		t.Errorf("XMP lacks the creation date:\n%s", xmp)
 	}
 	// CIDSet is deprecated in PDF 2.0 and must not be written for PDF/A-4.
 	pages, _ := d.Pages()

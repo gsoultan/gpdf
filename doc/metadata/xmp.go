@@ -49,6 +49,9 @@ func BuildXMP(in XMPInput) []byte {
 			fmt.Fprintf(&b, "   <pdfuaid:rev>%s</pdfuaid:rev>\n", esc(in.PDFUARev))
 		}
 		b.WriteString("  </rdf:Description>\n")
+		if in.PDFAPart != "" {
+			writePDFUAExtensionSchema(&b, in.PDFUARev != "")
+		}
 	}
 	b.WriteString("  <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n")
 	b.WriteString("   <dc:format>application/pdf</dc:format>\n")
@@ -87,6 +90,44 @@ func BuildXMP(in XMPInput) []byte {
 	b.WriteString(strings.Repeat(" ", 2048)) // padding, so tools can edit in place
 	b.WriteString("\n<?xpacket end=\"w\"?>\n")
 	return []byte(b.String())
+}
+
+// writePDFUAExtensionSchema describes the pdfuaid schema in the PDF/A extension
+// schema container (ISO 19005-2 §6.6.2.3.2): PDF/A predefines no PDF/UA
+// identification schema, so a file claiming both must declare it.
+func writePDFUAExtensionSchema(b *strings.Builder, withRev bool) {
+	b.WriteString(`  <rdf:Description rdf:about="" xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#" xmlns:pdfaProperty="http://www.aiim.org/pdfa/ns/property#">
+   <pdfaExtension:schemas>
+    <rdf:Bag>
+     <rdf:li rdf:parseType="Resource">
+      <pdfaSchema:schema>PDF/UA identification schema</pdfaSchema:schema>
+      <pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>
+      <pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>
+      <pdfaSchema:property>
+       <rdf:Seq>
+        <rdf:li rdf:parseType="Resource">
+         <pdfaProperty:name>part</pdfaProperty:name>
+         <pdfaProperty:valueType>Integer</pdfaProperty:valueType>
+         <pdfaProperty:category>internal</pdfaProperty:category>
+         <pdfaProperty:description>PDF/UA version identifier</pdfaProperty:description>
+        </rdf:li>
+`)
+	if withRev {
+		b.WriteString(`        <rdf:li rdf:parseType="Resource">
+         <pdfaProperty:name>rev</pdfaProperty:name>
+         <pdfaProperty:valueType>Integer</pdfaProperty:valueType>
+         <pdfaProperty:category>internal</pdfaProperty:category>
+         <pdfaProperty:description>PDF/UA revision year</pdfaProperty:description>
+        </rdf:li>
+`)
+	}
+	b.WriteString(`       </rdf:Seq>
+      </pdfaSchema:property>
+     </rdf:li>
+    </rdf:Bag>
+   </pdfaExtension:schemas>
+  </rdf:Description>
+`)
 }
 
 // PDFDate formats t as a PDF 1.x date string. See model.FormatDate for the PDF 2.0 form.

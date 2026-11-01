@@ -11,6 +11,18 @@ type contentTokenizer struct {
 	r *bytes.Reader
 }
 
+// peek returns the next n bytes without consuming them.
+func (t *contentTokenizer) peek(n int) ([]byte, bool) {
+	if t.r.Len() < n {
+		return nil, false
+	}
+	pos, _ := t.r.Seek(0, io.SeekCurrent)
+	out := make([]byte, n)
+	_, err := t.r.Read(out)
+	_, _ = t.r.Seek(pos, io.SeekStart)
+	return out, err == nil
+}
+
 func newContentTokenizer(data []byte) *contentTokenizer {
 	return &contentTokenizer{r: bytes.NewReader(data)}
 }
@@ -107,12 +119,14 @@ func (t *contentTokenizer) readName() (ctoken, error) {
 			break
 		}
 		if b == '#' && buf.Len() > 0 {
-			hex := make([]byte, 2)
-			if n, _ := t.r.Read(hex); n == 2 && isHexChar(hex[0]) && isHexChar(hex[1]) {
+			// Peek rather than read: a short or non-hex escape must leave
+			// the following bytes in place (an unread of the '#' itself
+			// would loop forever at the end of the stream).
+			if hex, ok := t.peek(2); ok && isHexChar(hex[0]) && isHexChar(hex[1]) {
+				_, _ = t.r.Seek(2, io.SeekCurrent)
 				buf.WriteByte(hexByte(hex[0], hex[1]))
 				continue
 			}
-			_ = t.r.UnreadByte()
 		}
 		buf.WriteByte(b)
 	}

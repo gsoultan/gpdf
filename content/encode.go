@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/gsoultan/gpdf/model"
 )
@@ -18,8 +19,17 @@ func NewEncoder() *Encoder {
 	return &Encoder{w: &bytes.Buffer{}}
 }
 
-// WriteOp appends one operator (args then name) to the stream.
+// WriteOp appends one operator (args then name) to the stream. An inline
+// image, as the parser returns it (operator BI with the parameter dictionary
+// and the raw samples as its arguments), is written back in BI … ID … EI form.
 func (e *Encoder) WriteOp(op Op) error {
+	if op.Name == "BI" && len(op.Args) == 2 {
+		if params, ok := op.Args[0].(model.Dict); ok {
+			if data, ok := op.Args[1].(model.String); ok {
+				return e.writeInlineImage(params, []byte(data))
+			}
+		}
+	}
 	for i, arg := range op.Args {
 		if i > 0 {
 			e.w.WriteByte(' ')
@@ -32,6 +42,33 @@ func (e *Encoder) WriteOp(op Op) error {
 	e.w.WriteString(op.Name)
 	e.w.WriteByte('\n')
 	return nil
+}
+
+func (e *Encoder) writeInlineImage(params model.Dict, data []byte) error {
+	e.w.WriteString("BI")
+	for _, key := range sortedKeys(params) {
+		e.w.WriteByte(' ')
+		if err := e.writeObject(key); err != nil {
+			return err
+		}
+		e.w.WriteByte(' ')
+		if err := e.writeObject(params[key]); err != nil {
+			return err
+		}
+	}
+	e.w.WriteString(" ID ")
+	e.w.Write(data)
+	e.w.WriteString("\nEI\n")
+	return nil
+}
+
+func sortedKeys(d model.Dict) []model.Name {
+	keys := make([]model.Name, 0, len(d))
+	for key := range d {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // Bytes returns the encoded content stream.
@@ -69,17 +106,15 @@ func (e *Encoder) writeObject(obj model.Object) error {
 		e.w.WriteByte(']')
 	case model.Dict:
 		e.w.WriteString("<<")
-		first := true
-		for key, val := range v {
-			if !first {
+		for i, key := range sortedKeys(v) {
+			if i > 0 {
 				e.w.WriteByte(' ')
 			}
-			first = false
 			if err := e.writeObject(key); err != nil {
 				return err
 			}
 			e.w.WriteByte(' ')
-			if err := e.writeObject(val); err != nil {
+			if err := e.writeObject(v[key]); err != nil {
 				return err
 			}
 		}

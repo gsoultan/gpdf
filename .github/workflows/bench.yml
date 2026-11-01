@@ -1,0 +1,45 @@
+name: Benchmarks
+
+# Runs the benchmarks on the pull request and on its base, and reports the
+# benchstat comparison in the job summary. A manual run on a branch reports
+# that branch alone.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-liberation fonts-urw-base35
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+      - name: Benchmark the head
+        run: go test ./tests/doc ./tests/reader -run '^$' -bench . -benchmem -count 6 | tee head.txt
+      - name: Benchmark the base
+        if: github.event_name == 'pull_request'
+        run: |
+          git checkout --quiet "$(git merge-base HEAD origin/${{ github.base_ref }})"
+          go test ./tests/doc ./tests/reader -run '^$' -bench . -benchmem -count 6 | tee base.txt
+          git checkout --quiet -
+      - name: Compare
+        run: |
+          {
+            echo '## Benchmarks'
+            echo
+            echo '```'
+            if [ -f base.txt ]; then benchstat base.txt head.txt; else benchstat head.txt; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: "*.txt"

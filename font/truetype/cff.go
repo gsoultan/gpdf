@@ -266,6 +266,24 @@ func (f *Font) CFF() []byte {
 	return f.cff.data
 }
 
+// ProgramCIDs returns the CIDs an embedded whole CFF program holds: the
+// charset CIDs of a CID-keyed font, or one per glyph otherwise. A PDF/A CIDSet
+// for a /FontFile3 program must list them all.
+func (f *Font) ProgramCIDs() map[uint16]bool {
+	if f.cff == nil {
+		return nil
+	}
+	n := f.cff.numGlyphs
+	if n <= 0 {
+		n = f.numGlyphs
+	}
+	out := make(map[uint16]bool, n)
+	for gid := range min(n, 1<<16) {
+		out[f.glyphCode(uint16(gid))] = true
+	}
+	return out
+}
+
 // CIDSystemInfo returns the Registry, Ordering and Supplement of a CID-keyed
 // CFF program. For TrueType fonts and non-CID-keyed CFF fonts, whose glyphs
 // are addressed directly by glyph index, it returns Adobe-Identity-0.

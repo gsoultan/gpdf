@@ -144,8 +144,21 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   as Flate CMYK (Go's encoder has no CMYK JPEG); no JPEG 2000, no recompression of images in opened files.
 - Writer always re-encodes Flate content (no pass-through of the original compressed bytes). Tests that grep the
   raw output for dictionary text need `NoObjectStreams()` (dicts live in compressed object streams otherwise).
-- PDF/A: only level B of parts 2 and 3; checks cover fonts, CMYK and encryption, not everything veraPDF checks
-  (no veraPDF available here). Not done: PDF/A-1, level A/U, embedded-file (AF) support for PDF/A-3.
+- DONE (roadmap phase 6, 2026-11-01): `tests/conformance` corpus (19 output forms) checked by `qpdf --check` and
+  veraPDF 1.28.2 in CI (`GPDF_REQUIRE_TOOLS=1`), nightly fuzzing (`.github/workflows/fuzz.yml`, 9 targets with a
+  cached corpus) and benchstat on PRs (`bench.yml`). veraPDF found and these are FIXED: ParentTree arrays were
+  ordered by element creation instead of MCID (and listed LI for Lbl/LBody); structure elements lacked `/P`
+  (`setStructParents`); PDF/A-4 wrote an Info dictionary (ISO 19005-4 §6.1.3 forbids it, `DatesOnly` now drops
+  it); CIDSet listed only used glyphs (must list every glyph slot of the subset, `Font.SubsetGlyphs`, or every
+  CID of a whole CFF program, `Font.ProgramCIDs`); PDF/A + PDF/UA files lacked the pdfaExtension schema for
+  pdfuaid. qpdf found: linearization page-offset hints listed the first page's own objects as shared and later
+  pages did not reference first-page objects they reuse (`hintTables`). Fuzzing found: content tokenizer looped
+  forever on a name ending in `#` (`/F#`); `content.Encoder` wrote inline images as `<<…>> (…) BI` and dicts in
+  map order; `EncodeTextString` passed undefined control bytes through as PDFDoc text; `walkTextOps` panicked
+  on `Tf` without operands.
+- PDF/A: only level B of parts 2 and 3; every level the builder offers passes veraPDF 1.28.2 for the corpus
+  documents (text, lists, tables, figures, links, embedded Liberation fonts). Not done: PDF/A-1, level A/U,
+  embedded-file (AF) support for PDF/A-3.
 - Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).
 
 ## Repo / process

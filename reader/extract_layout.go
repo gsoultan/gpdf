@@ -320,6 +320,9 @@ func walkTextOps(
 		case "rg", "g", "RG", "G", "k", "K":
 			applyColorOp(st, op)
 		case "Tf":
+			if len(op.Args) < 1 {
+				continue
+			}
 			applyFontOp(st, op, resources, src)
 			_ = resolveFontDecoder(src, resources, op.Args[0], fontDecoders)
 			st.resolvedFont = resolveFontName(src, resources, op.Args[0])
