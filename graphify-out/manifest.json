@@ -1206,9 +1206,9 @@
     "semantic_hash": ""
   },
   "stream/flate/flate.go": {
-    "mtime": 1793444198.8868897,
-    "seen": 1793532623.5319948,
-    "ast_hash": "7f25e0fe4c49b665f40d497a36823813",
+    "mtime": 1793532962.7672389,
+    "seen": 1793533081.3584816,
+    "ast_hash": "2b20ebd717288b9c31d4869ff06f30f0",
     "semantic_hash": ""
   },
   "stream/jbig2/jbig2.go": {
@@ -2022,9 +2022,9 @@
     "semantic_hash": ""
   },
   ".serena/memories/architecture.md": {
-    "mtime": 1793532612.8930774,
-    "seen": 1793532623.5320804,
-    "ast_hash": "2cfecca1b66f1a28fa08225a26ae7621",
+    "mtime": 1793533075.832745,
+    "seen": 1793533081.3585856,
+    "ast_hash": "fea3b719f73e7e2295458ba33c948918",
     "semantic_hash": ""
   },
   ".serena/memories/code_style_and_conventions.md": {

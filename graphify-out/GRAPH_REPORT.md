@@ -1,17 +1,17 @@
 # Graph Report - gpdf  (2026-11-01)
 
 ## Corpus Check
-- 344 files · ~179,773 words
+- 344 files · ~179,833 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 8 file(s) not represented in the graph (top: (none) 8)
 
 ## Summary
-- 3073 nodes · 17177 edges · 148 communities (84 shown, 64 thin omitted)
+- 3073 nodes · 17178 edges · 148 communities (84 shown, 64 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 776 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8b9a1c7f`
+- Built from commit: `2437d9eb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

@@ -3,6 +3,7 @@ package flate
 import (
 	"compress/zlib"
 	"io"
+	"sync"
 
 	"github.com/gsoultan/gpdf/stream"
 )
@@ -29,7 +30,9 @@ func (Filter) Encode(dst io.Writer, src io.Reader, name string) error {
 	if name != "FlateDecode" {
 		return nil
 	}
-	w := zlib.NewWriter(dst)
+	w := writers.Get().(*zlib.Writer)
+	w.Reset(dst)
+	defer writers.Put(w)
 	_, err := io.Copy(w, src)
 	if err != nil {
 		w.Close()
@@ -37,6 +40,10 @@ func (Filter) Encode(dst io.Writer, src io.Reader, name string) error {
 	}
 	return w.Close()
 }
+
+// writers recycles zlib writers: each one carries ~1 MB of compressor state,
+// and a document compresses one stream per page, font and image.
+var writers = sync.Pool{New: func() any { return zlib.NewWriter(io.Discard) }}
 
 // NewFilter returns a FlateDecode filter.
 func NewFilter() stream.Filter {
