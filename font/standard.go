@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package font
 
 // StandardFontMetrics provides advance widths for Helvetica at 1000 units per em.

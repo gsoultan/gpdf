@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // AcroForm is the interactive form (AcroForm) dictionary. Keys: /Fields, /SigFlags, /CO, /DA, etc.

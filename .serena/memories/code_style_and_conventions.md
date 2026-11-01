@@ -9,3 +9,5 @@
 - Reader limits are configurable through `reader.ReaderOptions` (strict vs tolerant parser mode).
 - Tests: white-box `_test.go` next to code for internals, black-box under `tests/`; use `t.TempDir()` for files.
 - Don't commit generated PDFs (`/*.pdf` is gitignored; older ones were committed before the rule).
+
+- Copyright header: every hand-written Go file starts with `// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>` followed by a blank line (so it is not the package doc). CI step "Copyright headers" fails on any tracked .go file without it, except files marked `// Code generated ... DO NOT EDIT.`

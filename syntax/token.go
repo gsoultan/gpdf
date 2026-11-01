@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package syntax
 
 // TokenKind identifies the type of a PDF token.

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // cv demonstrates recreating "CV CONTOH.pdf" — a black-and-white modern CV
 // produced with Canva — using gPDF.
 //

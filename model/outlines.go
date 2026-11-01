@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // Outlines is the root of the document outline (bookmarks) dictionary.

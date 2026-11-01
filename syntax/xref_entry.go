@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package syntax
 
 // XRefEntry describes one entry in the cross-reference table.

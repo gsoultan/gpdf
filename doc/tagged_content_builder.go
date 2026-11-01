@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package doc
 
 // TaggedContentBuilder exposes text-oriented tagged content helpers (sections, captions, quotes, code blocks).

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // Trailer holds trailer dictionary entries: /Root, /Size, /Encrypt, /Info, etc.

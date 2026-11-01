@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Example merge demonstrates how to merge multiple PDF files into one.
 //
 // Usage:
