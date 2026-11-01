@@ -29,7 +29,9 @@ func testCert(t *testing.T, key crypto.Signer, cn string) *x509.Certificate {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject:      pkix.Name{CommonName: cn, Organization: []string{"gPDF tests"}},
-		NotBefore:    time.Now().Add(-time.Hour),
+		// Fixed start so the certificate covers the fixed SigningTime used by
+		// TestSignAndVerify whatever day the tests run.
+		NotBefore:    time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
