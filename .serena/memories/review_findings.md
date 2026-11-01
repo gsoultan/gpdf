@@ -129,6 +129,15 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   raw images and soft masks get Predictor 15; `CompressImages(ImageCompression{MaxDPI, JPEGQuality})`;
   `writer.StreamWriter` and builder `StreamTo`/`Finish`/`BuildTo`. Reader fix: `decodeSMaskFully` now recognises
   already-decoded mask content (`SMaskDecoded` was false for Flate+predictor masks).
+- DONE (roadmap phase 5, 2026-11-01): reading-order extraction (structure tree or XY-cut layout fallback),
+  incremental updates (`SaveIncremental`, change tracking in the reader; Replace no longer loses edits to cache
+  eviction), redaction (`doc.Redact`). Builder fix: `/Alt` was written inside `/A` for figures and cells (it is an
+  element entry, §14.9.3); TH `/A` now carries `/O /Table` as attribute dictionaries must.
+- Reading-order limits: no Indic/vertical text handling in the XY cut; rotated pages are read in unrotated
+  coordinates; MCIDs inside form XObjects are attributed to the page.
+- Redaction limits: removes whole text-showing operators (the run containing the match, not only the matched
+  characters); text in form XObjects, annotations, bookmarks, metadata and glyph programs is not removed; box
+  geometry assumes unrotated text.
 - Streaming limits: no encryption or linearization in streaming mode; the builder still keeps text runs and page
   specs until Finish (only image samples and content streams are released early); no dangling-reference check.
 - Image compression limits: downsampling handles 8-bit samples only; CMYK JPEGs that are downsampled are stored

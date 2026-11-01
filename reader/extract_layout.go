@@ -287,13 +287,33 @@ func extractBlocksFromOps(
 	fontDecoders map[model.Ref]*toUnicodeDecoder,
 	st *layoutState,
 ) []TextBlock {
+	var blocks []TextBlock
+	walkTextOps(ops, src, parser, resources, visited, fontDecoders, st, func(_ int, _ *layoutState, b []TextBlock, _ bool) {
+		blocks = append(blocks, b...)
+	})
+	return blocks
+}
+
+// walkTextOps runs the layout state machine over ops and calls visit for every
+// operator that shows text, with the operator's index, the state just before it
+// was applied (font, spacing, matrices) and the blocks it produced. Blocks from
+// form XObjects are reported with the index of the Do operator and nested=true.
+func walkTextOps(
+	ops []content.Op,
+	src contentSource,
+	parser content.Parser,
+	resources model.Dict,
+	visited map[model.Ref]struct{},
+	fontDecoders map[model.Ref]*toUnicodeDecoder,
+	st *layoutState,
+	visit func(i int, st *layoutState, blocks []TextBlock, nested bool),
+) {
 	if st == nil {
 		st = newLayoutState()
 	}
 	inText := false
-	var blocks []TextBlock
 
-	for _, op := range ops {
+	for i, op := range ops {
 		switch op.Name {
 		case "q", "Q", "cm":
 			applyGraphicsStateOp(st, op)
@@ -307,7 +327,11 @@ func extractBlocksFromOps(
 			applyTextMatrixOp(st, op, inText)
 		case "Tj", "TJ", "'", "\"":
 			if inText {
-				blocks = append(blocks, applyTextShowOp(st, op, resources, src, fontDecoders)...)
+				before := *st
+				b := applyTextShowOp(st, op, resources, src, fontDecoders)
+				if len(b) > 0 {
+					visit(i, &before, b, false)
+				}
 			}
 		case "BT":
 			inText = true
@@ -362,10 +386,11 @@ func extractBlocksFromOps(
 			}
 		case "Do":
 			nested := extractBlocksFromXObject(op.Args, src, parser, resources, visited, fontDecoders, st)
-			blocks = append(blocks, nested...)
+			if len(nested) > 0 {
+				visit(i, st, nested, true)
+			}
 		}
 	}
-	return blocks
 }
 
 func makeBlock(text string, st *layoutState) TextBlock {

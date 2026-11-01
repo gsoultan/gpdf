@@ -132,6 +132,49 @@ func (d *builtDocument) ReadContentPerPage() ([]string, error) {
 	return reader.ExtractTextPerPage(d)
 }
 
+func (d *builtDocument) ReadContentInReadingOrder() (string, error) {
+	return reader.ExtractTextInReadingOrder(d)
+}
+
+func (d *builtDocument) ReadStructuredText() ([]reader.TextElement, error) {
+	return reader.ExtractStructuredText(d)
+}
+
+// SaveIncremental is not available for a document built in memory.
+func (d *builtDocument) SaveIncremental(io.Writer) error { return ErrNoBaseFile }
+
+// SetObject replaces or adds an indirect object.
+func (d *builtDocument) SetObject(ref model.Ref, obj model.Object) {
+	d.objects[ref.ObjectNumber] = obj
+	if ref.ObjectNumber >= d.size {
+		d.size = ref.ObjectNumber + 1
+		d.trailer.Dict[model.Name("Size")] = model.Integer(int64(d.size))
+	}
+}
+
+// NewObject adds obj under the next free object number.
+func (d *builtDocument) NewObject(obj model.Object) model.Ref {
+	ref := model.Ref{ObjectNumber: d.size}
+	d.SetObject(ref, obj)
+	return ref
+}
+
+// SetInfo sets one entry of the Info dictionary.
+func (d *builtDocument) SetInfo(key string, value model.Object) error {
+	if ref := d.trailer.Info(); ref != nil {
+		if info, ok := d.objects[ref.ObjectNumber].(model.Dict); ok {
+			info[model.Name(key)] = value
+			return nil
+		}
+	}
+	ref := d.NewObject(model.Dict{model.Name(key): value})
+	if d.trailer.Dict == nil {
+		d.trailer.Dict = model.Dict{}
+	}
+	d.trailer.Dict[model.Name("Info")] = ref
+	return nil
+}
+
 func (d *builtDocument) ReadImages() ([]reader.ImageInfo, error) {
 	return reader.ExtractImages(d)
 }

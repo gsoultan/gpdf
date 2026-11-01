@@ -126,12 +126,15 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 				} else {
 					elemDict[model.Name("K")] = kids
 				}
+				// Scope is a table attribute (owner /Table, ISO 32000-2 §14.8.5.7);
+				// Alt and Lang are entries of the element itself (§14.9.3, §14.9.2).
 				attr := model.Dict{}
 				if c.Role == model.Name("TH") && c.Scope != "" {
+					attr[model.Name("O")] = model.Name("Table")
 					attr[model.Name("Scope")] = model.Name(c.Scope)
 				}
 				if c.Alt != "" {
-					attr[model.Name("Alt")] = model.String(c.Alt)
+					elemDict[model.Name("Alt")] = model.String(c.Alt)
 				}
 				if c.Lang != "" {
 					elemDict[model.Name("Lang")] = model.String(c.Lang)
@@ -239,9 +242,7 @@ func (s *Support) BuildStructure(objs map[int]model.Object, catalogDict model.Di
 			model.Name("K"):    mcr,
 		}
 		if fig.Alt != "" {
-			elemDict[model.Name("A")] = model.Dict{
-				model.Name("Alt"): model.String(fig.Alt),
-			}
+			elemDict[model.Name("Alt")] = model.String(fig.Alt)
 		}
 		objs[figureObjNums[i]] = elemDict
 	}

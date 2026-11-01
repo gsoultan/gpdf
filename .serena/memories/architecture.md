@@ -62,8 +62,23 @@ Key flows
   streams, Filespec with /AFRelationship, EmbeddedFiles name tree, catalog/page /AF), `buildPageOutputIntents`,
   `buildDocumentParts` (DPartRoot/DPart, gaps filled), then `encodeTextStrings` over every object. PDF/A-4 levels set
   `version="2.0"` and `DatesOnly` Info. Forms: `doc/form/appearance.go` builds /AP streams and /DR /DA.
+- Reading order (`reader/reading_order.go`): `ExtractStructuredText` walks StructTreeRoot /K (RoleMap applied,
+  MCR/OBJR/inline kids, ActualText, Alt also read from /A for foreign files), gathering per-page MCID text with
+  `collectMarkedContent` (BDC/BMC/EMC stack, form XObjects); inline roles (Span, Link, ...) join their parent;
+  `TextElement{Role, Page, Depth, Parent, Text, Alt}`; `JoinTextElements` (Lbl+LBody with a space, cells of a
+  row with tabs, pages with a blank line). Untagged fallback `OrderBlocks`: XY cut (wider band wins: y gap ≥1.5
+  line, x gap ≥1 line) then rows → paragraphs (`regionParagraphs`).
+- Change tracking (`documentCore.modified`): `MarkModified`/`NewObject`/`ModifiedObjects`/`Source`/`MarkRedacted`;
+  modified objects are pinned in the cache and included in `ObjectNumbers`; `reader.ReplaceContent` and
+  `RedactContent` call `markModified`. `file.Document.SaveIncremental` copies the source bytes and
+  `WriteIncremental`s the modified set (trailer copied from the base); `SetInfo`, `SetObject`, `NewObject`
+  (`doc.ObjectEditor`, also on `builtDocument`). `doc.ErrNoBaseFile`, `doc.ErrRedacted` (= `file.ErrRedacted`).
+- Redaction (`reader/redact.go`, `doc/redact.go`): `walkTextOps` (shared with `extractBlocksFromOps`) reports each
+  text-showing op with its pre-state and blocks; matched ops become `[n] TJ` displacements (`displacementOps`,
+  ' and " keep their T*/Tw/Tc), content is wrapped in q/Q and boxes appended (`re f`), page content goes into the
+  first stream (others emptied); matches in form XObjects are only counted (`SkippedInForms`).
 - Reading PDF 2.0: `model.DecodeTextString` (`String.Text()`), `model.ParseDate`, `reader.ExtractEmbeddedFiles`
   (name tree + /AF), `pdfDocument.EffectiveVersion` (header vs catalog /Version), R6 passwords via `security.saslprep`.
 - Builder text: `buildTextOps` tracks Tc/Tw/Tz/Tr (`textStateTracker`) so text state never leaks between runs; links get /Border [0 0 0].
 
-Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-11-01 the graph is built from 036d17f and is stale for the roadmap branch (phases 1–4): graphify was not installable in those sessions (no network for pip), so rerun `graphify update .`.
+Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-11-01 the graph is built from 036d17f and is stale for the roadmap branch (phases 1–5): graphify was not installable in those sessions (no network for pip), so rerun `graphify update .`.

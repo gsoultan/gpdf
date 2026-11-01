@@ -39,6 +39,12 @@ A library for reading, searching, and modifying PDF documents.
   content as they are produced, so memory does not grow with the images; `writer.NewStreamWriter` does the same
   for any object graph.
 
+- **Reading order, incremental updates and redaction**: `ReadContentInReadingOrder()` / `ReadStructuredText()`
+  follow the structure tree of a tagged document (or find columns and paragraphs by layout analysis in an
+  untagged one); `SetInfo`, `SetObject`, `NewObject` and `Replace` change an opened file and `SaveIncremental`
+  appends only those changes, keeping earlier signatures valid; `doc.Redact` removes text by string, pattern or
+  area and draws a box over it. Merge, split and page extraction are in `doc.Merge`, `doc.Split`, `doc.Extract`.
+
 ## Usage
 
 ### Reading a PDF
@@ -84,6 +90,23 @@ for _, pageTables := range tables {
 }
 ```
  
+### Reading order, updating in place, redacting
+
+```go
+d, _ := doc.Open("report.pdf")
+text, _ := d.ReadContentInReadingOrder()    // columns and tables in the order they are read
+elems, _ := d.ReadStructuredText()          // []reader.TextElement{Role, Page, Text, ...}
+
+d.SetInfo("Title", model.String("Report, revised"))
+d.Replace("Draft", "Final")
+f, _ := os.Create("report-v2.pdf")
+d.SaveIncremental(f)                        // original bytes + the changed objects only
+
+report, _ := doc.Redact(d, doc.RedactOptions{Texts: []string{"Alice"}, Pattern: regexp.MustCompile(`\d{3}-\d{4}`)})
+g, _ := os.Create("report-redacted.pdf")
+d.Save(g)                                   // full rewrite: the removed text is gone
+```
+
 ### Merging PDFs
 
 ```go
