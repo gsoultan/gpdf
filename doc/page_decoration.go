@@ -101,11 +101,11 @@ func (b *DocumentBuilder) drawPageText(p *Page, t PageText, y float64, pageIndex
 	ps := &b.pc.pages[p.pageIndex]
 	for _, seg := range b.fc.resolveFont(s, font) {
 		ps.AddText(textRun{
-			Text: seg.text, X: x, Y: y, FontName: seg.fontName, FontSize: size,
+			Text: seg.drawText(), Glyphs: seg.glyphs, X: x, Y: y, FontName: seg.fontName, FontSize: size,
 			TextColorRGB: [3]float64{t.Color.R, t.Color.G, t.Color.B},
 			IsArtifact:   true,
 		})
-		x += b.textWidth(seg.text, size, seg.fontName)
+		x += b.segmentWidth(seg, size, 0, 0)
 	}
 }
 

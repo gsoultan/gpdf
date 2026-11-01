@@ -95,7 +95,20 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   (`doc/annot3d.go`, U3D/PRC stream, poster appearance) and geospatial viewports (`doc/geo.go` /VP /Measure GEO,
   `reader.ExtractGeoViewports` + `ToGeo`). Annotations from builder code go through `doc/annotations.go` annotBuilder.
 - PDF 2.0 features still not implemented: unencrypted wrapper documents, RichMedia, tagged PDF 2.0 namespaces in the
-  builder (reader exposes /Namespaces). Standard 14 fonts are still written unembedded (phase 2).
+  builder (reader exposes /Namespaces).
+- DONE (roadmap phase 2, 2026-11-01): `EmbedStandardFonts`/`EmbedStandardFont` (aliases an embeddable font under a
+  standard name; `font/system/standard.go` finds Liberation/Nimbus/Croscore, FreeFont/DejaVu as last resort),
+  OpenType CFF (`font/truetype/cff.go`: Top DICT, charset, ROS; embedded whole as FontFile3/CIDFontType0C under
+  CIDFontType0; glyph codes are CIDs for CID-keyed programs), `RegisterBlockFallbackFont`, `EnableSystemFontFallback`
+  (`font/system/fallback.go`, lazy per-rune lookup), and shaping (`font/shaping`: UAX #9 bidi + mirroring + Arabic
+  joining; `truetype.Font.Shape` applies GSUB init/medi/fina or presentation forms, liga/clig/rlig ligatures, kern).
+  Text runs carry `Glyphs` (visual order); the content writer encodes them and ToUnicode is built per glyph.
+  Fixed on the way: ligature glyphs were not in the subset (Encode applied them, markText did not), every GSUB
+  type-4 lookup was applied (now only liga/clig/rlig), and inline Type1 font dicts in page resources made poppler's
+  pdffonts report an internal error (now shared indirect objects, `indirectStandardFonts`).
+- Font limits: CFF programs are embedded whole (no CFF subsetting); shaping covers Arabic joining only (no Indic
+  reordering, no mark positioning/GPOS); bidi ignores explicit embedding/isolate controls; Symbol/ZapfDingbats
+  substitutes need URW base35 (`StandardSymbolsPS`, `D050000L`) installed.
 - Signature limits: time-stamp tokens are embedded but their own signature is not checked; no OCSP/CRL fetching
   (caller passes DER data to AddValidationData); incremental update writes an xref table even after an xref stream;
   signing an encrypted file is refused.

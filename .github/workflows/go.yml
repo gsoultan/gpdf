@@ -14,7 +14,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install poppler (interoperability checks)
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core fonts-liberation fonts-urw-base35
+      - name: Install optional fonts (OpenType CFF and CJK tests skip without them)
+        run: sudo apt-get install -y fonts-inter fonts-noto-cjk || true
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - name: vet

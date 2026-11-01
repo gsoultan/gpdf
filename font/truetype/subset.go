@@ -8,7 +8,14 @@ import (
 // Subset returns a new TrueType font program containing only the glyphs
 // referenced by usedGlyphIDs plus glyph 0 (.notdef). Glyph IDs are preserved
 // (unused entries are zeroed in glyf), keeping /CIDToGIDMap /Identity valid.
+//
+// For an OpenType font with CFF outlines the complete CFF program is returned
+// instead: CFF charstrings are not subset, and the program goes into a
+// /FontFile3 stream (see CFF).
 func (f *Font) Subset(usedGlyphIDs map[uint16]bool) ([]byte, error) {
+	if f.cff != nil {
+		return f.cff.data, nil
+	}
 	glyfData, err := f.tableData("glyf")
 	if err != nil {
 		return nil, err

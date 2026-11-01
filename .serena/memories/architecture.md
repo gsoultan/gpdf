@@ -13,7 +13,7 @@ Layering (low → high). Interfaces sit at the package root; concrete code in `i
 | `reader/file` | `file.Document`: wraps a reader doc + `writer.PDFWriter` for Save / SaveWithPassword / SaveWithAES256Password / SaveLinearized. |
 | `writer` | `PDFWriter.Write` (full rewrite, xref table, real generations via optional `Generation(num)`, clean trailer, skips source Encrypt/XRef/ObjStm objects, filter chains re-encoded, sorted keys, `model.FormatReal`), `WriteIncremental`, `WriteLinearized` (no hint stream), encrypted variants, `graph_validation.go` (refs must resolve; disabled for files read from disk, where dangling refs are written as null). |
 | `content` + `content/impl` | Content-stream tokenizer/parser (`Op`) and encoder. |
-| `font`, `font/truetype`, `font/system` | Standard-14 metrics, TrueType parsing/subsetting/GSUB/ToUnicode, system font lookup. |
+| `font`, `font/truetype`, `font/shaping`, `font/system` | Standard-14 metrics and the `Font`/`EmbeddableFont`/`Shaper`/`GlyphEncoder`/`CFFFont` interfaces; `truetype`: TrueType and OpenType-CFF parsing (`cff.go`), subsetting (CFF embedded whole), GSUB (liga/clig/rlig ligatures, Arabic init/medi/fina), `Shape` (forms, ligatures, kerning → `font.Glyph`), ToUnicode by rune or by glyph; `shaping`: UAX #9 bidi `Reorder`/`Levels`, `Mirror`, Arabic `JoiningTypeOf`/`ArabicForms`/presentation forms; `system`: font directory scanners, `StandardSubstitutes` (standard-14 → Liberation/Nimbus/...), `Fallback` (installed font covering a rune). |
 | `xobject` | Image/form XObject helpers. |
 | `doc` | Public facade. `Document` = CatalogReader + ContentReader + ContentSearcher + ImageReader + LayoutReader + Saver. `DocumentBuilder` (+ `builder/graphics|imgdraw|text`, `table`, `form`, `layer`, `tagged`, `outline`, `metadata`, `style`, `pagesize`), `builtDocument`, `merge.go`, `split.go`, `cloner.go` (ref-remapping deep copy). |
 | `sign` | PAdES/CMS signatures: `CMSSigner` (`cms.go`, encoding/asn1 SignedData with content-type, message-digest, ESS signing-certificate-v2, optional RFC 3161 token), `Sign` (`sign.go`: incremental update with Sig dict + merged Sig field/widget, ByteRange and Contents patched in place, DocMDP certification, optional appearance), `Verify` (`verify.go`: byte-range digest, CMS signature, chain via x509, CoversWholeDocument), `AddValidationData` (`dss.go`: /DSS Certs/CRLs/OCSPs, ESIC extension). Encrypted inputs refused. |
@@ -28,6 +28,13 @@ Key flows
   `buildOpsInCallOrder` (`doc/paint_order.go`, sorted by run `Seq`); both go through `textOpsWriter` and
   `imageOpsWriter`. In call order, the text writer forgets its color/text state after each graphic run.
 - Builder images: PNG → `image.DecodePNG` → `ImageRun.SetPNG` (alpha as /SMask); raw images and masks are FlateDecode.
+- Builder text: `fontConfig.resolveFont` (`doc/font_config.go`) reorders each line with `shaping.Reorder`, splits
+  runs by font (primary → block fallback → fallback chain → system fallback, registering fonts on the fly), and
+  shapes segments whose font is a `font.Shaper` (RTL runs get reversed glyphs). `fontSegment.glyphs` →
+  `TextRun.Glyphs` → `shapedTextArg` in the content writer (TJ with kerning); `embeddedFontUsage.markGlyphs`
+  tracks glyph → text for ToUnicode. Standard names map to embedded programs through `aliasedFont`
+  (`registerFontAs`), whose `EmbeddedFontName` becomes the subset BaseFont. Inline simple-font dicts are turned
+  into shared indirect objects at the end of Build (`indirectStandardFonts`).
 - Builder page decorators (`doc/page_decoration.go`): `OnEveryPage`/`SetHeader`/`SetFooter` run inside Build with the
   final page count (runs added are removed again after Build, so Build is repeatable); output is a pagination artifact.
 - PDF/A (`doc/pdfa.go`): `PDFA(PDFA2B|PDFA3B)` → `preparePDFA` (sRGB ICC from `style.SRGBICCProfile`, XMP from

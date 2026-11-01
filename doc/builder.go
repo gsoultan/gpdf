@@ -11,6 +11,8 @@ import (
 	"github.com/gsoultan/gpdf/doc/pagesize"
 	taggedpkg "github.com/gsoultan/gpdf/doc/tagged"
 	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/font/shaping"
+	"github.com/gsoultan/gpdf/font/system"
 	"github.com/gsoultan/gpdf/model"
 )
 
@@ -139,6 +141,88 @@ func (b *DocumentBuilder) RegisterFallbackFont(f font.Font) *DocumentBuilder {
 	b.fc.addFallback(f.PostScriptName())
 	return b
 }
+
+// RegisterBlockFallbackFont registers a font to be used for characters of one
+// Unicode block group ("CJK", "Arabic", "Hebrew", "Thai", "Indic" or
+// "Default") that the primary font lacks. Block fallbacks are tried before
+// the fonts given to RegisterFallbackFont.
+func (b *DocumentBuilder) RegisterBlockFallbackFont(block string, f font.Font) *DocumentBuilder {
+	if f == nil {
+		return b
+	}
+	b.RegisterFont(f)
+	b.fc.setBlockFallback(block, f.PostScriptName())
+	return b
+}
+
+// EnableSystemFontFallback lets text fall back to the fonts installed on the
+// system for characters that neither the primary font nor the registered
+// fallbacks cover. Installed fonts are scanned lazily on the first miss and
+// embedded as subsets like any registered font.
+func (b *DocumentBuilder) EnableSystemFontFallback() *DocumentBuilder {
+	fb := system.DefaultFallback()
+	b.fc.systemFallback = func(r rune) font.EmbeddableFont {
+		if f := fb.FontFor(r); f != nil {
+			return f
+		}
+		return nil
+	}
+	return b
+}
+
+// EmbedStandardFont embeds f in place of one of the standard 14 fonts
+// (Helvetica, Times-Roman, Courier and their styles, Symbol, ZapfDingbats):
+// text drawn with that standard name is measured with f and written with a
+// subset of f embedded, which PDF/A and PDF/UA require. Text drawn before the
+// call is not affected.
+func (b *DocumentBuilder) EmbedStandardFont(standardName string, f font.EmbeddableFont) *DocumentBuilder {
+	if f == nil || standardName == "" {
+		return b
+	}
+	b.fc.registerFontAs(f, standardName)
+	return b
+}
+
+// EmbedStandardFonts embeds substitutes for the standard 14 fonts found on
+// the system (Liberation, URW Nimbus or Croscore, which share the standard
+// metrics; FreeFont or DejaVu as a last resort). A warning is recorded for
+// every standard font without a substitute and for substitutes whose widths
+// differ from the standard metrics. The scan runs once per process.
+func (b *DocumentBuilder) EmbedStandardFonts() *DocumentBuilder {
+	subs := system.DefaultStandardSubstitutes()
+	for _, name := range system.StandardFontNames {
+		sub, ok := subs[name]
+		if !ok {
+			b.logWarning("no embeddable substitute installed for standard font " + name)
+			continue
+		}
+		if !sub.MetricCompatible {
+			b.logWarning("substitute " + sub.Path + " for " + name + " does not match the standard metrics")
+		}
+		b.fc.registerFontAs(sub.Font, name)
+	}
+	return b
+}
+
+// SetTextDirection sets the base direction used by the bidirectional
+// algorithm for every line of text. The default, DirectionAuto, takes the
+// direction from the first strong character of each line.
+func (b *DocumentBuilder) SetTextDirection(d TextDirection) *DocumentBuilder {
+	b.fc.direction = shaping.Direction(d)
+	return b
+}
+
+// TextDirection is the base direction of a line of text.
+type TextDirection int
+
+const (
+	// DirectionAuto resolves the base direction from the first strong character.
+	DirectionAuto TextDirection = TextDirection(shaping.Auto)
+	// DirectionLTR lays lines out left to right.
+	DirectionLTR TextDirection = TextDirection(shaping.LeftToRight)
+	// DirectionRTL lays lines out right to left.
+	DirectionRTL TextDirection = TextDirection(shaping.RightToLeft)
+)
 
 // SetDefaultICCProfile sets an ICC color profile for the document.
 func (b *DocumentBuilder) SetDefaultICCProfile(profile ICCProfile) *DocumentBuilder {

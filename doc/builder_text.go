@@ -163,15 +163,12 @@ func (b *DocumentBuilder) layoutTextIntoPages(pageIndex int, textStr string, x, 
 				continue
 			}
 
-			textToDraw := seg.text
-			if seg.isRTL {
-				textToDraw = reverseRunes(textToDraw)
-			}
-			segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, opts.LetterSpacing, 0)
+			segWidth := b.segmentWidth(seg, fontSize, opts.LetterSpacing, 0)
 			numSpaces := countWordSpaces(seg.text)
 
 			r := textRun{
-				Text:            textToDraw,
+				Text:            seg.drawText(),
+				Glyphs:          seg.glyphs,
 				X:               currentX,
 				Y:               currentY,
 				FontName:        seg.fontName,
@@ -241,6 +238,14 @@ func (b *DocumentBuilder) fontWidthFunc(fontName string) text.FontWidthFunc {
 
 // textWidth returns the width of text in points.
 // Uses real glyph widths from a registered font when available, otherwise falls back to a heuristic.
+// TextWidth measures s in points at fontSize with the named font: a
+// registered font's metrics after shaping, the standard 14 metrics for a
+// standard font name, or an approximation for unknown fonts. Fallback fonts
+// are taken into account for characters the named font lacks.
+func (b *DocumentBuilder) TextWidth(s string, fontSize float64, fontName string) float64 {
+	return b.textWidthStyle(s, fontSize, fontName, 0, 0)
+}
+
 func (b *DocumentBuilder) textWidth(s string, fontSize float64, fontName string) float64 {
 	return b.textWidthStyle(s, fontSize, fontName, 0, 0)
 }
@@ -254,8 +259,8 @@ func (b *DocumentBuilder) textWidthStyle(s string, fontSize float64, fontName st
 	// Optimization: if it's a known font and no fallbacks would trigger, avoid resolveFont.
 	// We can check if the string contains any non-ASCII characters that might trigger fallback.
 	// But to be safe and simple, let's just check if we have any fallbacks at all.
-	if len(b.fc.fallbackChain) == 0 && len(b.fc.blockFallbacks) == 0 {
-		if f, ok := b.fc.fonts[fontName]; ok {
+	if !b.fc.hasFallbacks() {
+		if f, ok := b.fc.fonts[b.fc.resolveFontName(fontName)]; ok {
 			w = f.TextWidth(s, fontSize)
 		} else {
 			w = b.standardOrApproxWidth(s, fontSize, fontName)
@@ -263,14 +268,46 @@ func (b *DocumentBuilder) textWidthStyle(s string, fontSize float64, fontName st
 	} else {
 		segments := b.fc.resolveFont(s, fontName)
 		for _, seg := range segments {
-			if f, ok := b.fc.fonts[seg.fontName]; ok {
-				w += f.TextWidth(seg.text, fontSize)
-			} else {
-				w += b.standardOrApproxWidth(seg.text, fontSize, seg.fontName)
-			}
+			w += b.segmentWidth(seg, fontSize, 0, 0)
 		}
 	}
 
+	if charSpacing != 0 {
+		w += float64(len([]rune(s))-1) * charSpacing
+	}
+	if wordSpacing != 0 {
+		w += float64(countWordSpaces(s)) * wordSpacing
+	}
+	return w
+}
+
+// segmentWidth measures one resolved segment: from its shaped glyphs when the
+// font shapes, so that the advance matches the glyphs drawn, and from the
+// text otherwise.
+func (b *DocumentBuilder) segmentWidth(seg fontSegment, fontSize, charSpacing, wordSpacing float64) float64 {
+	if seg.glyphs == nil {
+		var w float64
+		if f, ok := b.fc.fonts[seg.fontName]; ok {
+			w = f.TextWidth(seg.text, fontSize)
+		} else {
+			w = b.standardOrApproxWidth(seg.text, fontSize, seg.fontName)
+		}
+		return w + extraSpacing(seg.text, charSpacing, wordSpacing)
+	}
+	f, ok := b.fc.fonts[seg.fontName]
+	if !ok || f.UnitsPerEm() == 0 {
+		return 0
+	}
+	var total int
+	for _, g := range seg.glyphs {
+		total += g.Advance + g.Kern
+	}
+	w := float64(total) * fontSize / float64(f.UnitsPerEm())
+	return w + extraSpacing(seg.text, charSpacing, wordSpacing)
+}
+
+func extraSpacing(s string, charSpacing, wordSpacing float64) float64 {
+	var w float64
 	if charSpacing != 0 {
 		w += float64(len([]rune(s))-1) * charSpacing
 	}
@@ -340,9 +377,9 @@ func (b *DocumentBuilder) DrawTextWithSpacing(textStr string, x, y float64, font
 	segments := b.fc.resolveFont(textStr, fontName)
 	currentX := x
 	for _, seg := range segments {
-		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, wordSpacing)
+		segWidth := b.segmentWidth(seg, fontSize, letterSpacing, wordSpacing)
 		b.pc.pages[idx].AddText(textRun{
-			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			Text: seg.drawText(), Glyphs: seg.glyphs, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
 			TextColorRGB:  [3]float64{color.R, color.G, color.B},
 			LetterSpacing: letterSpacing,
 			WordSpacing:   wordSpacing,
@@ -372,9 +409,9 @@ func (b *DocumentBuilder) DrawTextWithSpacingScale(textStr string, x, y float64,
 	segments := b.fc.resolveFont(textStr, fontName)
 	currentX := x
 	for _, seg := range segments {
-		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, wordSpacing) * horizontalScale / 100
+		segWidth := b.segmentWidth(seg, fontSize, letterSpacing, wordSpacing) * horizontalScale / 100
 		b.pc.pages[idx].AddText(textRun{
-			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			Text: seg.drawText(), Glyphs: seg.glyphs, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
 			TextColorRGB:    [3]float64{color.R, color.G, color.B},
 			LetterSpacing:   letterSpacing,
 			WordSpacing:     wordSpacing,
@@ -401,9 +438,10 @@ func (b *DocumentBuilder) DrawTextRotated(textStr string, x, y float64, fontName
 	segments := b.fc.resolveFont(textStr, fontName)
 	currentX := x
 	for _, seg := range segments {
-		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, 0, 0)
+		segWidth := b.segmentWidth(seg, fontSize, 0, 0)
 		b.pc.pages[idx].AddText(textRun{
-			Text:         seg.text,
+			Text:         seg.drawText(),
+			Glyphs:       seg.glyphs,
 			X:            currentX,
 			Y:            y,
 			FontName:     seg.fontName,
@@ -430,9 +468,9 @@ func (b *DocumentBuilder) drawTextColoredAt(pageIndex int, textStr string, x, y 
 	segments := b.fc.resolveFont(textStr, fontName)
 	currentX := x
 	for _, seg := range segments {
-		segWidth := b.textWidthStyle(seg.text, fontSize, seg.fontName, letterSpacing, 0)
+		segWidth := b.segmentWidth(seg, fontSize, letterSpacing, 0)
 		b.pc.pages[pageIndex].AddText(textRun{
-			Text: seg.text, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			Text: seg.drawText(), Glyphs: seg.glyphs, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
 			TextColorRGB:  [3]float64{color.R, color.G, color.B},
 			LetterSpacing: letterSpacing,
 		})

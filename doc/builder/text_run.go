@@ -1,10 +1,16 @@
 package builder
 
-import "github.com/gsoultan/gpdf/model"
+import (
+	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/model"
+)
 
 // TextRun describes one text draw on a page.
 type TextRun struct {
-	Text     string
+	Text string
+	// Glyphs, when set, is the shaped glyph sequence (in visual order) that
+	// is written to the content stream instead of encoding Text.
+	Glyphs   []font.Glyph
 	X, Y     float64
 	FontName string
 	FontSize float64

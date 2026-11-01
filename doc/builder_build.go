@@ -3,6 +3,7 @@ package doc
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/gsoultan/gpdf/model"
 )
@@ -342,6 +343,47 @@ func (b *DocumentBuilder) buildEmbeddedFonts(objs map[int]model.Object, nextNum 
 	}
 	if len(embeddedFontObjNums) > 0 {
 		b.replaceEmbeddedFontPlaceholders(objs, embeddedFontObjNums)
+	}
+	return b.indirectStandardFonts(objs, nextNum)
+}
+
+// indirectStandardFonts moves the simple font dictionaries that pages hold
+// inline in their /Resources into shared indirect objects, one per distinct
+// dictionary. Readers expect font dictionaries to be indirect (poppler's font
+// scanner reports an internal error for a direct one), and sharing them keeps
+// multi-page files small.
+func (b *DocumentBuilder) indirectStandardFonts(objs map[int]model.Object, nextNum int) int {
+	shared := map[string]int{}
+	pageNums := make([]int, 0, len(objs))
+	for num := range objs {
+		pageNums = append(pageNums, num)
+	}
+	sort.Ints(pageNums)
+	for _, num := range pageNums {
+		pageDict, ok := objs[num].(model.Dict)
+		if !ok || pageDict[model.Name("Type")] != model.Name("Page") {
+			continue
+		}
+		resDict, _ := pageDict[model.Name("Resources")].(model.Dict)
+		fontDict, _ := resDict[model.Name("Font")].(model.Dict)
+		for resName, val := range fontDict {
+			d, ok := val.(model.Dict)
+			if !ok {
+				continue
+			}
+			if _, placeholder := d[model.Name("_embedded")]; placeholder {
+				continue
+			}
+			key := fmt.Sprint(d) // fmt prints map keys sorted, so equal dicts share a key
+			objNum, seen := shared[key]
+			if !seen {
+				objNum = nextNum
+				nextNum++
+				objs[objNum] = d
+				shared[key] = objNum
+			}
+			fontDict[resName] = model.Ref{ObjectNumber: objNum}
+		}
 	}
 	return nextNum
 }

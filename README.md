@@ -21,6 +21,11 @@ A library for reading, searching, and modifying PDF documents.
   responses in /DSS (PAdES-B-LT).
 - **Portable collections, 3D and geospatial**: `Collection` with a schema over the attachments, `Page.Add3D` (U3D/PRC
   with poster), `Page.AddGeoViewport` with `reader.ExtractGeoViewports` for coordinates.
+- **Fonts**: TrueType and OpenType/CFF (`.otf`) embedding as subsets, `EmbedStandardFonts` to embed Liberation/URW
+  substitutes for the standard 14 fonts (needed for PDF/A and PDF/UA), per-block and system-font fallback
+  (`RegisterBlockFallbackFont`, `EnableSystemFontFallback`), and text shaping: Unicode bidi (UAX #9) reordering,
+  bracket mirroring, Arabic joining through the font's GSUB init/medi/fina features (presentation forms as a
+  fallback), ligatures and kerning, with a ToUnicode CMap that maps shaped glyphs back to their text.
 - **PDF/A**: `PDFA(doc.PDFA2B | PDFA3B | PDFA4 | PDFA4E | PDFA4F)` with sRGB output intent and XMP identification.
 
 ## Usage
