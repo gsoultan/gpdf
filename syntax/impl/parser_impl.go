@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/gsoultan/gpdf/model"
 	"github.com/gsoultan/gpdf/syntax"
@@ -448,76 +447,39 @@ func (p *ParserImpl) ParseXRefTable() (entries map[int]syntax.XRefEntry, err err
 			return nil, fmt.Errorf("xref: expected integer count, got %v", tok.Kind)
 		}
 		count := int(tok.Int)
-		// Tokenizer unread the delimiter after "count", so CurrentOffset is at last digit. Skip to first digit of first 20-byte line.
-		lineStart := p.tok.CurrentOffset()
-		b := make([]byte, 1)
-		afterNewline := false
-		for {
-			if _, err := p.r.ReadAt(b, lineStart); err != nil {
-				break
-			}
-			if b[0] == '\n' {
-				lineStart++
-				afterNewline = true
-				continue
-			}
-			if b[0] == ' ' || b[0] == '\t' {
-				lineStart++
-				continue
-			}
-			if b[0] >= '0' && b[0] <= '9' {
-				if afterNewline {
-					break
-				}
-				lineStart++
-				continue
-			}
-			if b[0] == '\r' {
-				lineStart++
-				if n, _ := p.r.ReadAt(b, lineStart); n > 0 && b[0] == '\n' {
-					lineStart++
-				}
-				break
-			}
-			break
-		}
+		// Entries are read as tokens rather than fixed 20-byte records: many writers
+		// emit 19-byte (LF only) or 21-byte lines, which the strict layout misreads.
 		for i := range count {
-			entryOffset := lineStart + int64(i*20)
-			buf := make([]byte, 20)
-			_, err := p.r.ReadAt(buf, entryOffset)
+			offTok, err := p.nextToken()
 			if err != nil {
 				return nil, err
 			}
-			// Format: 10-digit offset, space, 5-digit gen, space, n/f, EOL
-			offsetStr := bytes.TrimSpace(buf[0:10])
-			genStr := bytes.TrimSpace(buf[11:16])
-			flag := buf[17]
-			objNum := start + i
-			off, _ := strconv.ParseInt(string(offsetStr), 10, 64)
-			gen, _ := strconv.Atoi(string(genStr))
-			entries[objNum] = syntax.XRefEntry{
-				Offset:     off,
-				Generation: gen,
-				InUse:      flag == 'n',
-			}
-		}
-		// Advance tokenizer past this subsection
-		p.SetPosition(lineStart + int64(count*20))
-		// Skip newline before next subsection or "trailer"
-		for {
-			tok, err := p.nextToken()
-			if err != nil {
-				break
-			}
-			if tok.Kind == syntax.TokenInteger {
-				p.hasPeek = true
-				p.lastTok = tok
-				break
-			}
-			if tok.Kind == syntax.TokenKeyword && tok.Value == "trailer" {
-				p.hasPeek = true
-				p.lastTok = tok
+			if offTok.Kind == syntax.TokenKeyword && offTok.Value == "trailer" {
+				// The subsection claimed more entries than it has.
+				p.hasPeek, p.lastTok = true, offTok
 				return entries, nil
+			}
+			if offTok.Kind != syntax.TokenInteger {
+				return nil, fmt.Errorf("xref: entry %d: expected offset, got %v", start+i, offTok.Kind)
+			}
+			genTok, err := p.nextToken()
+			if err != nil {
+				return nil, err
+			}
+			if genTok.Kind != syntax.TokenInteger {
+				return nil, fmt.Errorf("xref: entry %d: expected generation, got %v", start+i, genTok.Kind)
+			}
+			typeTok, err := p.nextToken()
+			if err != nil {
+				return nil, err
+			}
+			if typeTok.Value != "n" && typeTok.Value != "f" {
+				return nil, fmt.Errorf("xref: entry %d: expected n or f, got %q", start+i, typeTok.Value)
+			}
+			entries[start+i] = syntax.XRefEntry{
+				Offset:     offTok.Int,
+				Generation: int(genTok.Int),
+				InUse:      typeTok.Value == "n",
 			}
 		}
 	}

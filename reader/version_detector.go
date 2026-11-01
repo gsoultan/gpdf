@@ -56,6 +56,19 @@ func parseVersionHeader(buf []byte) PDFVersion {
 	return PDFVersion{Major: major, Minor: minor}
 }
 
+// parseVersionName reads a catalog /Version name such as "1.7" or "2.0".
+func parseVersionName(s string) (PDFVersion, bool) {
+	if len(s) != 3 || s[1] != '.' {
+		return PDFVersion{}, false
+	}
+	major, ok1 := digitAt([]byte(s), 0)
+	minor, ok2 := digitAt([]byte(s), 2)
+	if !ok1 || !ok2 {
+		return PDFVersion{}, false
+	}
+	return PDFVersion{Major: major, Minor: minor}, true
+}
+
 func digitAt(buf []byte, i int) (int, bool) {
 	if i >= len(buf) {
 		return 0, false

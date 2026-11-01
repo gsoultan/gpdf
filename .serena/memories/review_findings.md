@@ -56,13 +56,47 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
   FlowBuilder.Image works) uses it. `DecodePNGToRaw` is deprecated. [TestPNGAlphaBecomesSoftMaskAndImagesAreCompressed, poppler render]
 - FIXED (proteus-converter PR #3) — raw image XObjects and soft masks are written with /FlateDecode.
 
+- FIXED (round 2, 2026-10-31) — Adobe CMYK JPEGs get /Decode [1 0 1 0 1 0 1 0] (`jpegHasAdobeMarker`). [TestAdobeCMYKJPEGGetsInvertedDecode]
+- FIXED (round 2) — SaveLinearized writes a real primary hint stream (page offset + shared object tables) with
+  spec layout and renumbering; poppler parses it with no warnings. [TestSaveLinearizedWritesUsableHintTables]
+- FIXED (round 2) — unsupported filter: Resolve keeps the stream encoded (with /Filter), writer copies it unchanged.
+  [TestUnknownFilterIsPassedThrough]
+- FIXED (round 2) — xref table entries are read as tokens (19/21-byte entries work). [TestXRefTableWithNineteenByteEntries]
+- FIXED (round 2, found by FuzzReadDocument) — a stray `)` in a content stream hung text extraction forever
+  (`content/impl/tokenizer.go` readOperator). [TestParseStrayDelimiterTerminates]
+
+- FIXED (round 2, reported by proteus-converter) — embedded TrueType subsets carried the full name/cmap/post tables
+  (post alone was ~450 KB for CJK fonts) and full-length loca/hmtx. `font/truetype/subset.go` now keeps only
+  head, OS/2, cvt, fpgm, prep, hhea, maxp, hmtx, post (format 3.0), loca, glyf and cuts maxp/hhea/hmtx/loca to the
+  highest used GID (+1), so /CIDToGIDMap /Identity stays valid. DejaVuSans: 760 KB -> 6.7 KB for a short string.
+  Note: `truetype.Parse` cannot re-read a subset (it requires cmap); test it through poppler instead.
+  [tests/doc/font_subset_test.go]
+
+- FIXED (round 3, PDF 2.0 audit, 2026-11-01) — text strings were written as raw UTF-8 and read as raw bytes: now
+  `model.EncodeTextString`/`DecodeTextString` (UTF-8 BOM for 2.0 output, UTF-16BE BOM for PDF/A-2/3, PDFDocEncoding
+  on read), applied by `doc/text_strings.go` to every text-string key after the objects are built.
+- FIXED (round 3) — PDF dates: `model.ParseDate` (Z, optional apostrophes, partial dates) and `model.FormatDate`
+  (2.0 form `...Z` / `+HH'mm` vs 1.x `+HH'mm'`). Info and XMP for every build with metadata, not only PDF/A.
+- FIXED (round 3) — AES-256 R6 passwords go through SASLprep (`security/saslprep.go`: mapping, prohibited
+  characters, bidi rule; **no NFKC**, the standard library has no normaliser). Prohibited characters -> ErrPasswordPrep.
+- FIXED (round 3) — forms: every widget has an appearance stream (`doc/form/appearance.go`: text, check mark and
+  radio dot as vector paths, push button), AcroForm has /DR and /DA, NeedAppearances (deprecated in 2.0, forbidden
+  in PDF/A) is gone.
+- FIXED (round 3) — CIDSet (deprecated in PDF 2.0) is only written for PDF/A-2/3 output.
+- ADDED (round 3) — attachments/associated files (`doc/attach.go`, `reader/embedded_files.go`, `Document.Attachments()`),
+  PDF/A-4/4e/4f (PDF 2.0 header, pdfaid:rev 2020, Info limited to dates, 4f needs an attachment, PDF/A-2 rejects
+  attachments), page-level output intents, document parts (`DocumentPart`), ExtGState /UseBlackPtComp,
+  reader `EffectiveVersion()` (catalog /Version), catalog `Extensions()`, `DPartRootRef()`, page `OutputIntents()`.
+
 ## Still open
-- JPEG CMYK (Adobe inverted) gets DeviceCMYK with no /Decode array, so such files can render inverted.
-- SaveLinearized writes no hint stream (poppler warns "Hints table length ... invalid"; files still open).
-- AES-256 passwords are not SASLprep-normalised (ASCII and NFC input fine).
-- Reader decodes every stream on Resolve; a stream with an unsupported filter makes Resolve (and Save) fail.
+- SASLprep is applied without NFKC normalisation (no normaliser without golang.org/x/text).
+- PDF 2.0 features not implemented (reading passes them through untouched): /DSS and PAdES signatures (sign package is
+  a stub), /Collection (portable collections), unencrypted wrapper documents, geospatial (/Measure /GEO), 3D/RichMedia
+  annotations, tagged PDF 2.0 namespaces in the builder (reader exposes /Namespaces), page /PressTextureRendering? n/a.
+  Standard 14 fonts are still written unembedded (deprecated in 2.0; embed a TrueType font with RegisterFont instead).
 - Writer always re-encodes Flate content (no pass-through of the original compressed bytes).
-- Xref table parser assumes 20-byte entries.
+- PDF/A: only level B of parts 2 and 3; checks cover fonts, CMYK and encryption, not everything veraPDF checks
+  (no veraPDF available here). Not done: PDF/A-1, level A/U, embedded-file (AF) support for PDF/A-3.
 - Committed binaries despite `.gitignore`: `CV CONTOH.pdf` (779 KB), `test_out.pdf`, `.idea/` (left for the owner to decide).
 
 ## Repo / process

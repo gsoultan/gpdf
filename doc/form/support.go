@@ -1,6 +1,10 @@
 package form
 
-import "github.com/gsoultan/gpdf/model"
+import (
+	"fmt"
+
+	"github.com/gsoultan/gpdf/model"
+)
 
 // FieldKind identifies the general kind of AcroForm field.
 type FieldKind int
@@ -43,6 +47,13 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 		return 0, outNext
 	}
 	fieldsArray := model.Array{}
+	helvRef, zadbRef, outNext := fontResources(objs, outNext)
+	apNum := func(s *model.Stream) model.Ref {
+		n := outNext
+		outNext++
+		objs[n] = s
+		return model.Ref{ObjectNumber: n}
+	}
 
 	radioGroups := make(map[string]struct {
 		fieldNum int
@@ -55,6 +66,8 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 			continue
 		}
 		pageRef := model.Ref{ObjectNumber: pageNums[spec.PageIndex], Generation: 0}
+		w := spec.Rect[2] - spec.Rect[0]
+		h := spec.Rect[3] - spec.Rect[1]
 		rect := model.Array{
 			model.Real(spec.Rect[0]),
 			model.Real(spec.Rect[1]),
@@ -86,15 +99,20 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 				if spec.Value != "" {
 					fieldDict[model.Name("V")] = model.String(spec.Value)
 				}
+				ap, size := textFieldAppearance(spec.Value, w, h, helvRef)
+				fieldDict[model.Name("DA")] = model.String(fmt.Sprintf("/%s %s Tf 0 g", helvName, num(size)))
+				widgetDict[model.Name("AP")] = model.Dict{model.Name("N"): apNum(ap)}
 			case FieldCheckbox:
 				fieldDict[model.Name("FT")] = model.Name("Btn")
 				onName := model.Name("Yes")
 				apDict := model.Dict{
 					model.Name("N"): model.Dict{
-						onName:            model.Name("Yes"),
-						model.Name("Off"): model.Name("Off"),
+						onName:            apNum(symbolAppearance("4", w, h)),
+						model.Name("Off"): apNum(emptyAppearance("4", w, h)),
 					},
 				}
+				widgetDict[model.Name("MK")] = model.Dict{model.Name("CA"): model.String("4")}
+				fieldDict[model.Name("DA")] = model.String("/" + zadbName + " 0 Tf 0 g")
 				widgetDict[model.Name("AS")] = model.Name("Off")
 				if spec.Checked {
 					fieldDict[model.Name("V")] = onName
@@ -112,13 +130,17 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 					model.Name("S"): model.Name("SubmitForm"),
 					model.Name("F"): model.String(spec.SubmitURL),
 				}
+				fieldDict[model.Name("Ff")] = model.Integer(1 << 16) // Pushbutton
+				widgetDict[model.Name("MK")] = model.Dict{model.Name("CA"): model.String(spec.Value), model.Name("BG"): model.Array{model.Real(0.75)}}
+				widgetDict[model.Name("AP")] = model.Dict{model.Name("N"): apNum(buttonAppearance(spec.Value, w, h, helvRef))}
 			}
 
 			if spec.Tooltip != "" {
 				fieldDict[model.Name("TU")] = model.String(spec.Tooltip)
 			}
 			if spec.Required {
-				fieldDict[model.Name("Ff")] = model.Integer(1)
+				ff, _ := fieldDict[model.Name("Ff")].(model.Integer)
+				fieldDict[model.Name("Ff")] = ff | 1
 			}
 
 			objs[fieldNum] = fieldDict
@@ -149,6 +171,11 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 				model.Name("P"):       pageRef,
 				model.Name("Parent"):  model.Ref{ObjectNumber: group.fieldNum, Generation: 0},
 				model.Name("AS"):      model.Name("Off"),
+				model.Name("MK"):      model.Dict{model.Name("CA"): model.String("l")},
+				model.Name("AP"): model.Dict{model.Name("N"): model.Dict{
+					onName:            apNum(symbolAppearance("l", w, h)),
+					model.Name("Off"): apNum(emptyAppearance("l", w, h)),
+				}},
 			}
 			if spec.Checked {
 				group.onName = onName
@@ -165,8 +192,10 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 	for name, group := range radioGroups {
 		fieldDict := model.Dict{
 			model.Name("FT"):   model.Name("Btn"),
+			model.Name("Ff"):   model.Integer(1 << 15), // Radio
 			model.Name("T"):    model.String(name),
 			model.Name("Kids"): group.kids,
+			model.Name("DA"):   model.String("/" + zadbName + " 0 Tf 0 g"),
 		}
 		if group.onName != "" {
 			fieldDict[model.Name("V")] = group.onName
@@ -186,7 +215,13 @@ func (s *Support) BuildFields(objs map[int]model.Object, pageNums []int, catalog
 	if s.SigFlags != 0 {
 		acroDict[model.Name("SigFlags")] = model.Integer(int64(s.SigFlags))
 	}
-	acroDict[model.Name("NeedAppearances")] = model.Boolean(true)
+	// Every widget has an appearance stream, so NeedAppearances (deprecated in
+	// PDF 2.0 and forbidden in PDF/A) is not needed.
+	acroDict[model.Name("DR")] = model.Dict{model.Name("Font"): model.Dict{
+		model.Name(helvName): helvRef,
+		model.Name(zadbName): zadbRef,
+	}}
+	acroDict[model.Name("DA")] = model.String("/" + helvName + " 0 Tf 0 g")
 	objs[acroFormNum] = acroDict
 	catalogDict[model.Name("AcroForm")] = model.Ref{ObjectNumber: acroFormNum, Generation: 0}
 	return acroFormNum, outNext

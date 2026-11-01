@@ -59,3 +59,15 @@ func TestRepairWithoutTrailerUsesXRefStreamAndObjectStreams(t *testing.T) {
 		t.Fatalf("content = %q", got)
 	}
 }
+
+// Regression: xref entries were read as fixed 20-byte records, so tables with 19-byte
+// (LF only) entries, which many producers write, pointed every object at the wrong offset.
+func TestXRefTableWithNineteenByteEntries(t *testing.T) {
+	b := onePageWithContentObj("<< /Length 44 >>\nstream\nBT /F1 12 Tf 20 100 Td (Short lines) Tj ET\nendstream")
+	pdf := b.XRefTable("/Root 1 0 R")
+	pdf = bytes.ReplaceAll(pdf, []byte(" n \n"), []byte(" n\n"))
+	pdf = bytes.ReplaceAll(pdf, []byte(" f \n"), []byte(" f\n"))
+	if got := contentOf(t, readBytes(t, pdf)); !strings.Contains(got, "Short lines") {
+		t.Fatalf("content = %q", got)
+	}
+}

@@ -10,8 +10,11 @@ func (i *OutlineItem) Title() string {
 	if i == nil || i.Dict == nil {
 		return ""
 	}
-	if v, ok := i.Dict[Name("Title")].(String); ok {
-		return string(v)
+	switch v := i.Dict[Name("Title")].(type) {
+	case String:
+		return v.Text()
+	case HexString:
+		return v.Text()
 	}
 	return ""
 }

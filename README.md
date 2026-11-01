@@ -10,6 +10,12 @@ A library for reading, searching, and modifying PDF documents.
 - **Table Detection**: Identify table-like structures in PDF layouts.
 - **Image Extraction**: Extract images from PDF pages with color space conversion support.
 - **Merge & Split**: Combine multiple PDFs into one or split a PDF into several documents.
+- **PDF 2.0 (ISO 32000-2)**: `%PDF-2.0` output with UTF-8 text strings, 2.0 date form, XMP metadata, AES-256 (R 6)
+  encryption with SASLprep passwords, embedded/associated files (`AttachFile`), page-level output intents,
+  document parts (`DocumentPart`), black point compensation, and form fields with appearance streams.
+  Reading accepts every 1.x and 2.0 feature the writer produces (text strings, dates, catalog `/Version`,
+  attachments, `/Extensions`, `/DPartRoot`).
+- **PDF/A**: `PDFA(doc.PDFA2B | PDFA3B | PDFA4 | PDFA4E | PDFA4F)` with sRGB output intent and XMP identification.
 
 ## Usage
 

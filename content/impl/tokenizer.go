@@ -255,6 +255,13 @@ func (t *contentTokenizer) readOperator() (ctoken, error) {
 			return ctoken{}, err
 		}
 		if isSpace(b) || b == '/' || b == '(' || b == ')' || b == '<' || b == '>' || b == '[' || b == ']' || b == '%' {
+			if buf.Len() == 0 {
+				// A stray delimiter such as ')' cannot start a token. Consume it and
+				// report it as an (unknown) operator, otherwise Next would return the
+				// same empty token forever.
+				buf.WriteByte(b)
+				break
+			}
 			_ = t.r.UnreadByte()
 			break
 		}

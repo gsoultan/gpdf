@@ -46,6 +46,15 @@ func (d *Document) Info() (model.Dict, error) {
 	return d.doc.Info()
 }
 
+// Attachments lists the embedded files (EmbeddedFiles name tree and /AF).
+func (d *Document) Attachments() ([]reader.EmbeddedFile, error) {
+	cat, err := d.doc.Catalog()
+	if err != nil {
+		return nil, err
+	}
+	return reader.ExtractEmbeddedFiles(d.doc, cat)
+}
+
 // MetadataStream returns the XMP metadata stream bytes.
 func (d *Document) MetadataStream() ([]byte, error) {
 	return d.doc.MetadataStream()

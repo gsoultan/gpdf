@@ -12,6 +12,11 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
+	defer b.applyDecorators()()
+	if b.err != nil {
+		return nil, b.err
+	}
+	b.prepareMetadata()
 	objs := make(map[int]model.Object)
 	nextNum := 1
 
@@ -102,6 +107,14 @@ func (b *DocumentBuilder) Build() (Document, error) {
 	}
 
 	nextNum = b.buildCatalogExtras(objs, catalogDict, pageNums, nextNum)
+	nextNum = b.buildAttachments(objs, catalogDict, pageNums, nextNum)
+	nextNum = b.buildPageOutputIntents(objs, pageNums, nextNum)
+	if err := b.buildDocumentParts(objs, catalogDict, pageNums, nextNum); err != nil {
+		return nil, err
+	}
+	if b.partsNextNum > nextNum {
+		nextNum = b.partsNextNum
+	}
 	nextNum = b.buildEmbeddedFonts(objs, nextNum)
 
 	objs[catalogNum] = catalogDict
@@ -119,11 +132,20 @@ func (b *DocumentBuilder) Build() (Document, error) {
 			model.Name("Info"): model.Ref{ObjectNumber: infoNum, Generation: 0},
 		},
 	}
-	return &builtDocument{
+	encodeTextStrings(objs, b.metadata.PDF20)
+	if err := b.checkPDFA(objs); err != nil {
+		return nil, err
+	}
+	d := &builtDocument{
 		trailer: trailer,
 		objects: objs,
 		size:    nextNum,
-	}, nil
+	}
+	if b.pdfa != "" {
+		d.pdfa = true
+		d.version = b.pdfa.PDFVersion()
+	}
+	return d, nil
 }
 
 // BuildAndSave builds the document and saves it to the specified path.
@@ -289,7 +311,9 @@ func (b *DocumentBuilder) buildICCOutputIntent(objs map[int]model.Object, catalo
 	outputIntent := model.Dict{
 		model.Name("Type"):                      model.Name("OutputIntent"),
 		model.Name("S"):                         model.Name("GTS_PDFA1"),
-		model.Name("OutputConditionIdentifier"): model.String("sRGB"),
+		model.Name("OutputConditionIdentifier"): model.String("sRGB IEC61966-2.1"),
+		model.Name("Info"):                      model.String("sRGB IEC61966-2.1"),
+		model.Name("RegistryName"):              model.String("http://www.color.org"),
 		model.Name("DestOutputProfile"):         model.Ref{ObjectNumber: iccStreamNum},
 	}
 	intentNum := nextNum
@@ -308,7 +332,7 @@ func (b *DocumentBuilder) buildEmbeddedFonts(objs map[int]model.Object, nextNum 
 		if len(usage.usedGIDs) == 0 {
 			continue
 		}
-		type0Num := buildEmbeddedFontObjects(usage, objs, &nextNum)
+		type0Num := buildEmbeddedFontObjects(usage, objs, &nextNum, b.pdfa != "" && !b.pdfa.pdf20())
 		embeddedFontObjNums[psName] = type0Num
 	}
 	if len(embeddedFontObjNums) > 0 {

@@ -55,7 +55,14 @@ func BuildAES256EncryptDictForWriteWithRandom(userPassword, ownerPassword string
 	}
 	fileKey := seed[:32]
 	uvs, uks, ovs, oks := seed[32:40], seed[40:48], seed[48:56], seed[56:64]
-	userPw, ownerPw := aes256Password(userPassword), aes256Password(ownerPassword)
+	userPw, err := aes256Password(userPassword)
+	if err != nil {
+		return nil, nil, err
+	}
+	ownerPw, err := aes256Password(ownerPassword)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Algorithm 8: U and UE.
 	u := append(append(hashR6(userPw, uvs, nil, r), uvs...), uks...)

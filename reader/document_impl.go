@@ -365,6 +365,18 @@ func (d *pdfDocument) MetadataStream() ([]byte, error) {
 
 func (d *pdfDocument) PDFVersion() PDFVersion { return d.documentCore.Version() }
 
+func (d *pdfDocument) EffectiveVersion() PDFVersion {
+	v := d.documentCore.Version()
+	cat, err := d.Catalog()
+	if err != nil || cat == nil {
+		return v
+	}
+	if cv, ok := parseVersionName(string(cat.Version())); ok && !v.IsAtLeast(cv.Major, cv.Minor) {
+		return cv
+	}
+	return v
+}
+
 func (d *pdfDocument) Content() (string, error)              { return ExtractText(d) }
 func (d *pdfDocument) ContentPerPage() ([]string, error)     { return ExtractTextPerPage(d) }
 func (d *pdfDocument) Images() ([]ImageInfo, error)          { return ExtractImages(d) }

@@ -586,3 +586,15 @@ func (o *ImageObject) Draw() *Page {
 	}
 	return o.page
 }
+
+// Index returns the 0-based page index.
+func (p *Page) Index() int { return p.pageIndex }
+
+// Width returns the page width in points.
+func (p *Page) Width() float64 { return p.builder.pageWidth(p.pageIndex) }
+
+// Height returns the page height in points.
+func (p *Page) Height() float64 { return p.builder.pageHeight(p.pageIndex) }
+
+// Builder returns the document builder this page belongs to.
+func (p *Page) Builder() *DocumentBuilder { return p.builder }

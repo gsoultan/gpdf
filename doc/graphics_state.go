@@ -19,3 +19,12 @@ const (
 	BlendDifference = style.BlendDifference
 	BlendExclusion  = style.BlendExclusion
 )
+
+// BlackPointCompensation is the ExtGState /UseBlackPtComp value (PDF 2.0).
+type BlackPointCompensation = style.BlackPointCompensation
+
+const (
+	BlackPointDefault = style.BlackPointDefault
+	BlackPointOn      = style.BlackPointOn
+	BlackPointOff     = style.BlackPointOff
+)

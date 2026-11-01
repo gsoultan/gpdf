@@ -28,6 +28,22 @@ Key flows
   `buildOpsInCallOrder` (`doc/paint_order.go`, sorted by run `Seq`); both go through `textOpsWriter` and
   `imageOpsWriter`. In call order, the text writer forgets its color/text state after each graphic run.
 - Builder images: PNG → `image.DecodePNG` → `ImageRun.SetPNG` (alpha as /SMask); raw images and masks are FlateDecode.
+- Builder page decorators (`doc/page_decoration.go`): `OnEveryPage`/`SetHeader`/`SetFooter` run inside Build with the
+  final page count (runs added are removed again after Build, so Build is repeatable); output is a pagination artifact.
+- PDF/A (`doc/pdfa.go`): `PDFA(PDFA2B|PDFA3B)` → `preparePDFA` (sRGB ICC from `style.SRGBICCProfile`, XMP from
+  `metadata.BuildXMP`, CreationDate) and `checkPDFA` after object build (fonts embedded, no DeviceCMYK with RGB
+  intent); `builtDocument.version="1.7"` → writer `VersionedDocument` picks the header; encrypted saves refused.
+- Linearized save (`writer/linearized.go`): `planLinearization` splits objects into first-page section, per-page
+  sections, shared, other; objects are renumbered (rest from 1, first-page section after) and a hint stream with
+  page-offset + shared-object tables is written (offsets as if the hint stream were absent, arrays byte-aligned,
+  as poppler/qpdf read them).
+- PDF 2.0 output (`doc/pdf20.go`, `doc/attach.go`, `doc/text_strings.go`): Build runs `prepareMetadata` (XMP for any
+  metadata, `metadata.Support.PDF20` picks UTF-8 text strings and the 2.0 date form), `buildAttachments` (EmbeddedFile
+  streams, Filespec with /AFRelationship, EmbeddedFiles name tree, catalog/page /AF), `buildPageOutputIntents`,
+  `buildDocumentParts` (DPartRoot/DPart, gaps filled), then `encodeTextStrings` over every object. PDF/A-4 levels set
+  `version="2.0"` and `DatesOnly` Info. Forms: `doc/form/appearance.go` builds /AP streams and /DR /DA.
+- Reading PDF 2.0: `model.DecodeTextString` (`String.Text()`), `model.ParseDate`, `reader.ExtractEmbeddedFiles`
+  (name tree + /AF), `pdfDocument.EffectiveVersion` (header vs catalog /Version), R6 passwords via `security.saslprep`.
 - Builder text: `buildTextOps` tracks Tc/Tw/Tz/Tr (`textStateTracker`) so text state never leaks between runs; links get /Border [0 0 0].
 
 Graph: `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json` (regenerate with `graphify update .`). As of 2026-10-31 the graph is built from 036d17f and is stale for the fix branch: graphify was not installable in that session, so rerun `graphify update .`.

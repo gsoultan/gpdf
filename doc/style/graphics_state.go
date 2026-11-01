@@ -26,14 +26,26 @@ type GraphicsState struct {
 	FillOpacity   float64
 	StrokeOpacity float64
 	BlendMode     BlendMode
+	// BlackPointCompensation sets ExtGState /UseBlackPtComp (PDF 2.0): BlackPointOn,
+	// BlackPointOff, or empty for the reader's default.
+	BlackPointCompensation BlackPointCompensation
 }
+
+// BlackPointCompensation is the /UseBlackPtComp value (ISO 32000-2 §8.6.5.9).
+type BlackPointCompensation string
+
+const (
+	BlackPointDefault BlackPointCompensation = ""
+	BlackPointOn      BlackPointCompensation = "ON"
+	BlackPointOff     BlackPointCompensation = "OFF"
+)
 
 // IsDefault returns true when the state represents default (fully opaque, Normal blend).
 func (s GraphicsState) IsDefault() bool {
 	noFillChange := s.FillOpacity <= 0 || s.FillOpacity >= 1
 	noStrokeChange := s.StrokeOpacity <= 0 || s.StrokeOpacity >= 1
 	noBlendChange := s.BlendMode == "" || s.BlendMode == BlendNormal
-	return noFillChange && noStrokeChange && noBlendChange
+	return noFillChange && noStrokeChange && noBlendChange && s.BlackPointCompensation == BlackPointDefault
 }
 
 // ExtGStateDict builds the PDF ExtGState dictionary for this state.
@@ -49,6 +61,9 @@ func (s GraphicsState) ExtGStateDict() model.Dict {
 	}
 	if s.BlendMode != "" && s.BlendMode != BlendNormal {
 		d[model.Name("BM")] = model.Name(string(s.BlendMode))
+	}
+	if s.BlackPointCompensation != BlackPointDefault {
+		d[model.Name("UseBlackPtComp")] = model.Name(string(s.BlackPointCompensation))
 	}
 	return d
 }
