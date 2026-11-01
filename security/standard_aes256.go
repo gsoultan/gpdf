@@ -16,14 +16,18 @@ import (
 // AES-256 Standard handler: R 6 (ISO 32000-2 §7.6.4.3.3, Algorithms 2.A, 2.B, 8–13) and
 // the deprecated R 5 (Adobe extension level 3, plain SHA-256).
 
-// aes256Password prepares a password: UTF-8, truncated to 127 bytes. (SASLprep
-// normalisation is not applied; ASCII and already-normalised passwords are unaffected.)
-func aes256Password(password string) []byte {
-	b := []byte(password)
+// aes256Password prepares a password as ISO 32000-2 §7.6.4.3.3 says: SASLprep, then
+// UTF-8 truncated to 127 bytes. See saslprep for what is and is not applied.
+func aes256Password(password string) ([]byte, error) {
+	prepped, err := saslprep(password)
+	if err != nil {
+		return nil, err
+	}
+	b := []byte(prepped)
 	if len(b) > 127 {
 		b = b[:127]
 	}
-	return b
+	return b, nil
 }
 
 // hashR6 is Algorithm 2.B (R 6) or a single SHA-256 (R 5).
@@ -97,7 +101,11 @@ func authenticateAES256(enc model.Dict, password string, r int) ([]byte, bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	pw := aes256Password(password)
+	pw, err := aes256Password(password)
+	if err != nil {
+		// A password that cannot be prepared cannot be the right one.
+		return nil, false, fmt.Errorf("%w: %v", ErrWrongPassword, err)
+	}
 	u48 := u[:48]
 	if subtle.ConstantTimeCompare(hashR6(pw, o[32:40], u48, r), o[:32]) == 1 {
 		key, err := aesNoPad(hashR6(pw, o[40:48], u48, r), oe[:32], false)

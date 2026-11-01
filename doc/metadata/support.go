@@ -18,11 +18,29 @@ type Support struct {
 	Lang        string
 	// CreationDate, when set, is written as /CreationDate and /ModDate.
 	CreationDate time.Time
+	// PDF20 selects the ISO 32000-2 date form and UTF-8 text strings.
+	PDF20 bool
+	// DatesOnly limits the Info dictionary to CreationDate and ModDate (PDF/A-4, where
+	// the other entries are deprecated and the XMP packet carries them).
+	DatesOnly bool
+}
+
+// HasFields reports whether any descriptive metadata is set.
+func (s *Support) HasFields() bool {
+	return s.Title != "" || s.Author != "" || s.Subject != "" || s.Keywords != "" || s.Creator != "" || s.Producer != ""
 }
 
 // BuildInfoDict builds the PDF /Info dictionary from the stored metadata fields.
 func (s *Support) BuildInfoDict() model.Dict {
 	info := model.Dict{}
+	if !s.CreationDate.IsZero() {
+		d := model.String(model.FormatDate(s.CreationDate, s.PDF20))
+		info[model.Name("CreationDate")] = d
+		info[model.Name("ModDate")] = d
+	}
+	if s.DatesOnly {
+		return info
+	}
 	if s.Title != "" {
 		info[model.Name("Title")] = model.String(s.Title)
 	}
@@ -40,11 +58,6 @@ func (s *Support) BuildInfoDict() model.Dict {
 	}
 	if s.Producer != "" {
 		info[model.Name("Producer")] = model.String(s.Producer)
-	}
-	if !s.CreationDate.IsZero() {
-		d := model.String(PDFDate(s.CreationDate))
-		info[model.Name("CreationDate")] = d
-		info[model.Name("ModDate")] = d
 	}
 	return info
 }

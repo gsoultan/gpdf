@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/gsoultan/gpdf/model"
 )
 
 // XMPInput is what BuildXMP writes into an XMP packet.
@@ -12,7 +14,8 @@ type XMPInput struct {
 	Title, Author, Subject, Keywords, Creator, Producer string
 	Created, Modified                                   time.Time
 	// PDFAPart and PDFAConformance fill the pdfaid schema ("2", "B"). Empty leaves it out.
-	PDFAPart, PDFAConformance string
+	// PDFARev is the pdfaid:rev year for PDF/A-4 ("2020"), which has no conformance level.
+	PDFAPart, PDFAConformance, PDFARev string
 }
 
 // BuildXMP returns an XMP metadata packet. The values mirror the Info dictionary, as
@@ -28,7 +31,14 @@ func BuildXMP(in XMPInput) []byte {
 	b.WriteString("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
 	b.WriteString(" <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n")
 	if in.PDFAPart != "" {
-		fmt.Fprintf(&b, "  <rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">\n   <pdfaid:part>%s</pdfaid:part>\n   <pdfaid:conformance>%s</pdfaid:conformance>\n  </rdf:Description>\n", esc(in.PDFAPart), esc(in.PDFAConformance))
+		fmt.Fprintf(&b, "  <rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">\n   <pdfaid:part>%s</pdfaid:part>\n", esc(in.PDFAPart))
+		if in.PDFARev != "" {
+			fmt.Fprintf(&b, "   <pdfaid:rev>%s</pdfaid:rev>\n", esc(in.PDFARev))
+		}
+		if in.PDFAConformance != "" {
+			fmt.Fprintf(&b, "   <pdfaid:conformance>%s</pdfaid:conformance>\n", esc(in.PDFAConformance))
+		}
+		b.WriteString("  </rdf:Description>\n")
 	}
 	b.WriteString("  <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n")
 	b.WriteString("   <dc:format>application/pdf</dc:format>\n")
@@ -69,13 +79,5 @@ func BuildXMP(in XMPInput) []byte {
 	return []byte(b.String())
 }
 
-// PDFDate formats t as a PDF date string (ISO 32000-1 §7.9.4).
-func PDFDate(t time.Time) string {
-	_, off := t.Zone()
-	sign := '+'
-	if off < 0 {
-		sign = '-'
-		off = -off
-	}
-	return fmt.Sprintf("D:%s%c%02d'%02d'", t.Format("20060102150405"), sign, off/3600, off%3600/60)
-}
+// PDFDate formats t as a PDF 1.x date string. See model.FormatDate for the PDF 2.0 form.
+func PDFDate(t time.Time) string { return model.FormatDate(t, false) }

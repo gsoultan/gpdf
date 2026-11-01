@@ -13,6 +13,9 @@ type CatalogProvider interface {
 	Trailer() model.Trailer
 	// PDFVersion returns the version parsed from the file header (e.g. {2, 0} for PDF 2.0).
 	PDFVersion() PDFVersion
+	// EffectiveVersion is the header version or the catalog /Version entry, whichever
+	// is higher (ISO 32000-2 §7.7.2 lets the catalog raise the version).
+	EffectiveVersion() PDFVersion
 	// Linearization returns linearization metadata when the file is linearized, or nil.
 	Linearization() *LinearizationInfo
 }

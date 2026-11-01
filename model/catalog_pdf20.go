@@ -11,6 +11,41 @@ func (c *Catalog) DPartRef() *Ref {
 	return nil
 }
 
+// DPartRootRef returns the /DPartRoot (document part root) reference if present (PDF 2.0).
+func (c *Catalog) DPartRootRef() *Ref {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("DPartRoot")].(Ref); ok {
+		return &v
+	}
+	return nil
+}
+
+// Extensions returns the /Extensions dictionary (developer extensions, ISO 32000-2
+// §7.12), inline or nil. Each entry maps a prefix to a dictionary with /BaseVersion,
+// /ExtensionLevel and, in PDF 2.0, an optional /URL.
+func (c *Catalog) Extensions() Dict {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("Extensions")].(Dict); ok {
+		return v
+	}
+	return nil
+}
+
+// OutputIntents returns the catalog /OutputIntents array inline, if present.
+func (c *Catalog) OutputIntents() Array {
+	if c == nil || c.Dict == nil {
+		return nil
+	}
+	if v, ok := c.Dict[Name("OutputIntents")].(Array); ok {
+		return v
+	}
+	return nil
+}
+
 // AFRef returns the /AF (associated files) array reference if present (PDF 2.0).
 func (c *Catalog) AFRef() *Ref {
 	if c == nil || c.Dict == nil {

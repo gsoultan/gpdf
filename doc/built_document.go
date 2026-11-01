@@ -180,6 +180,15 @@ func (d *builtDocument) Resolve(ref model.Ref) (model.Object, error) {
 	return obj, nil
 }
 
+// Attachments lists the embedded files.
+func (d *builtDocument) Attachments() ([]reader.EmbeddedFile, error) {
+	cat, err := d.Catalog()
+	if err != nil {
+		return nil, err
+	}
+	return reader.ExtractEmbeddedFiles(d, cat)
+}
+
 func (d *builtDocument) ObjectNumbers() []int {
 	nums := make([]int, 0, d.size-1)
 	for i := 1; i < d.size; i++ {

@@ -23,6 +23,17 @@ func (p Page) DPartRef() *Ref {
 	return nil
 }
 
+// OutputIntents returns the page-level /OutputIntents array (PDF 2.0), if present.
+func (p Page) OutputIntents() Array {
+	if p.Dict == nil {
+		return nil
+	}
+	if v, ok := p.Dict[Name("OutputIntents")].(Array); ok {
+		return v
+	}
+	return nil
+}
+
 // Tabs returns the /Tabs name indicating the tab order for annotations on this page (PDF 1.5+).
 func (p Page) Tabs() Name {
 	if p.Dict == nil {

@@ -10,6 +10,8 @@
 - Entry points for users: `doc.Open`, `doc.OpenWithPassword`, `doc.OpenReader`, `doc.New()` builder,
   `doc.Merge`, `doc.Split`, `doc.SplitEvery`, `doc.Extract`. CLI examples in `cmd/*` (each takes an output path).
 - Sample input committed at repo root: `CV CONTOH.pdf` (Canva, xref table, 1 page). `cmd/cv` recreates it.
+- PDF 2.0 audit 2026-11-01 (round 3): text strings, dates, SASLprep, XMP, attachments/AF, PDF/A-4, form appearances,
+  page output intents, document parts, black point compensation. See `review_findings` for what is still open.
 - Last full review: 2026-10-31 (see memory `review_findings`); round 2 the same day added headers/footers, PDF/A,
   hint streams, fuzz targets (`FuzzReadDocument`, `FuzzTokenizer`, `FuzzParseObject`) and benchmarks
   (`go test -bench . ./syntax/impl ./tests/reader ./tests/doc`).

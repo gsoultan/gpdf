@@ -32,6 +32,10 @@ type DocumentBuilder struct {
 	decorators        []PageDecorator
 	pdfa              PDFALevel
 	iccProfile        *ICCProfile
+	attachments       []Attachment
+	pageIntents       []pageOutputIntent
+	parts             []documentPart
+	partsNextNum      int
 
 	err error
 

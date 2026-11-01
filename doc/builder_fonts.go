@@ -51,6 +51,7 @@ func buildEmbeddedFontObjects(
 	usage *embeddedFontUsage,
 	objs map[int]model.Object,
 	nextNum *int,
+	withCIDSet bool,
 ) int {
 	ef := usage.font
 	tag := randomSubsetTag()
@@ -67,8 +68,6 @@ func buildEmbeddedFontObjects(
 	fontFileNum := *nextNum
 	*nextNum++
 	tounicodeNum := *nextNum
-	*nextNum++
-	cidSetNum := *nextNum
 	*nextNum++
 
 	// Subset font program.
@@ -114,13 +113,18 @@ func buildEmbeddedFontObjects(
 	if subsetBytes != nil {
 		descriptorDict[model.Name("FontFile2")] = model.Ref{ObjectNumber: fontFileNum}
 	}
-	// CIDSet lists the glyphs in the subset (PDF/A-1 and -2 ask for it).
-	cidSet := buildCIDSet(usage.usedGIDs)
-	objs[cidSetNum] = &model.Stream{
-		Dict:    model.Dict{model.Name("Length"): model.Integer(int64(len(cidSet))), model.Name("Filter"): model.Name("FlateDecode")},
-		Content: cidSet,
+	// CIDSet lists the glyphs in the subset (PDF/A-1 and -2 ask for it; PDF 2.0
+	// deprecates it, so it is only written for PDF/A-2 and -3 output).
+	if withCIDSet {
+		cidSetNum := *nextNum
+		*nextNum++
+		cidSet := buildCIDSet(usage.usedGIDs)
+		objs[cidSetNum] = &model.Stream{
+			Dict:    model.Dict{model.Name("Length"): model.Integer(int64(len(cidSet))), model.Name("Filter"): model.Name("FlateDecode")},
+			Content: cidSet,
+		}
+		descriptorDict[model.Name("CIDSet")] = model.Ref{ObjectNumber: cidSetNum}
 	}
-	descriptorDict[model.Name("CIDSet")] = model.Ref{ObjectNumber: cidSetNum}
 	objs[descriptorNum] = descriptorDict
 
 	// CIDFont (DescendantFont).
