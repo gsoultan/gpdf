@@ -4,6 +4,7 @@ package doc
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 
 	"github.com/gsoultan/gpdf/content"
@@ -75,5 +76,6 @@ func (b *DocumentBuilder) buildOpsInCallOrder(page *pageSpec, imageStreamNums []
 			ops = iw.add(ops, r.index, page.ImageRuns[r.index])
 		}
 	}
+	maps.Copy(iw.gs, tw.gs)
 	return ops, tw.fontRes, iw.xobj, iw.gs
 }

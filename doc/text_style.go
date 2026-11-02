@@ -23,6 +23,7 @@ type TextStyle struct {
 	Leading         float64 // Line spacing override; 0 = use default
 	Rotation        float64 // Degrees; 0 = upright
 	IsVertical      bool
+	Opacity         float64 // Constant alpha; 0 or 1 = opaque
 
 	SyntheticBold   bool
 	SyntheticItalic bool

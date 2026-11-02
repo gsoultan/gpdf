@@ -28,6 +28,9 @@ type TextRun struct {
 
 	Rotation float64 // Degrees counter-clockwise; 0 = upright
 
+	// Opacity is the constant alpha (0 < Opacity < 1) the run is painted with; 0 or 1 is opaque.
+	Opacity float64
+
 	SyntheticBold   bool
 	SyntheticItalic bool
 
