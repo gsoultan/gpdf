@@ -27,6 +27,10 @@ Key flows
 - Builder paint: `buildPageContent` uses `buildGraphicsOps`/`buildTextOps`/`buildImageOps` (layered, default) or
   `buildOpsInCallOrder` (`doc/paint_order.go`, sorted by run `Seq`); both go through `textOpsWriter` and
   `imageOpsWriter`. In call order, the text writer forgets its color/text state after each graphic run.
+  Text opacity: `TextRun.Opacity` (0 < a < 1) wraps the run in `q /TXGS<n> gs ... Q`; the writer collects the
+  ExtGState dicts in `textOpsWriter.gs`, merged into the page resources with the image ones. Public entry:
+  `DocumentBuilder.DrawTextWithStyle(page, text, x, y, TextStyle)` (TextStyle gained `Opacity`), added for
+  proteus-converter watermarks (translucent rotated text stamped on every page).
 - Builder images: every image goes through `DocumentBuilder.addImage` (`builder_image.go`): `prepareImage`
   (`image_compression.go`: `CompressImages` → MaxDPI box downsampling of raw/JPEG samples and masks, JPEGQuality
   re-encoding of 8-bit gray/RGB without mask) then, in streaming mode, `docStream.writeImage`. PNG →

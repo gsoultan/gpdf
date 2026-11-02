@@ -934,3 +934,43 @@ func reverseRunes(s string) string {
 	}
 	return string(runes)
 }
+
+// DrawTextWithStyle draws text on page pageIndex with the baseline at (x, y),
+// using every field of s: font, size, colour, letter and word spacing,
+// horizontal scale, rotation, synthetic bold and italic, and opacity. A
+// translucent run (0 < s.Opacity < 1) is painted with constant alpha, so it
+// can be stacked over or under other content as a watermark or a stamp.
+func (b *DocumentBuilder) DrawTextWithStyle(pageIndex int, textStr string, x, y float64, s TextStyle) *DocumentBuilder {
+	if !b.pc.validPageIndex(pageIndex) {
+		return b
+	}
+	fontName := s.FontName
+	if fontName == "" {
+		fontName = "Helvetica"
+	}
+	fontSize := s.FontSize
+	if fontSize <= 0 {
+		fontSize = 12
+	}
+	segments := b.fc.resolveFont(textStr, fontName)
+	currentX := x
+	for _, seg := range segments {
+		segWidth := b.segmentWidth(seg, fontSize, s.LetterSpacing, s.WordSpacing)
+		if s.HorizontalScale > 0 && s.HorizontalScale != 100 {
+			segWidth *= s.HorizontalScale / 100
+		}
+		b.pc.pages[pageIndex].AddText(textRun{
+			Text: seg.drawText(), Glyphs: seg.glyphs, X: currentX, Y: y, FontName: seg.fontName, FontSize: fontSize,
+			TextColorRGB:    [3]float64{s.Color.R, s.Color.G, s.Color.B},
+			LetterSpacing:   s.LetterSpacing,
+			WordSpacing:     s.WordSpacing,
+			HorizontalScale: s.HorizontalScale,
+			Rotation:        s.Rotation,
+			Opacity:         s.Opacity,
+			SyntheticBold:   s.SyntheticBold,
+			SyntheticItalic: s.SyntheticItalic,
+		})
+		currentX += segWidth
+	}
+	return b
+}

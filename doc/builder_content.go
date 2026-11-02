@@ -54,13 +54,14 @@ func balancedMarkedContent(ops []content.Op) bool {
 
 // buildTextOps returns content stream ops from text runs and a font resource map (baseName -> resName).
 // If embeddedFonts is nil, uses b.fc.embeddedFonts.
-func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embeddedFonts map[string]*embeddedFontUsage) ([]content.Op, map[string]model.Name) {
+// Also returns the opacity ExtGState dicts of translucent runs to merge into page resources.
+func (b *DocumentBuilder) buildTextOps(page *pageSpec, pageHeight float64, embeddedFonts map[string]*embeddedFontUsage) ([]content.Op, map[string]model.Name, model.Dict) {
 	tw := b.newTextOpsWriter(embeddedFonts)
 	var ops []content.Op
 	for _, r := range page.TextRuns {
 		ops = tw.add(ops, r)
 	}
-	return ops, tw.fontRes
+	return ops, tw.fontRes, tw.gs
 }
 
 // textOpsWriter turns text runs into content stream ops. It tracks the fill color and the
@@ -69,6 +70,7 @@ type textOpsWriter struct {
 	b               *DocumentBuilder
 	ef              map[string]*embeddedFontUsage
 	fontRes         map[string]model.Name
+	gs              model.Dict // opacity ExtGStates of translucent runs (TXGS<n>)
 	currentColorSet bool
 	currentColor    [3]float64
 	// Tc, Tw, Tz and Tr are graphics-state parameters: they survive ET and apply to every
@@ -83,7 +85,7 @@ func (b *DocumentBuilder) newTextOpsWriter(embeddedFonts map[string]*embeddedFon
 	if embeddedFonts != nil {
 		ef = embeddedFonts
 	}
-	return &textOpsWriter{b: b, ef: ef, fontRes: make(map[string]model.Name)}
+	return &textOpsWriter{b: b, ef: ef, fontRes: make(map[string]model.Name), gs: model.Dict{}}
 }
 
 // forget drops the tracked fill color and text state. Call it after other content
@@ -93,8 +95,28 @@ func (w *textOpsWriter) forget() {
 	w.ts = textStateTracker{}
 }
 
-// add appends the ops for one text run.
+// add appends the ops for one text run. A translucent run (0 < Opacity < 1)
+// is wrapped in q/Q with a constant-alpha ExtGState; Q restores the colour
+// and text state the run set, so the tracked state is dropped afterwards.
 func (w *textOpsWriter) add(ops []content.Op, r textRun) []content.Op {
+	if r.Opacity <= 0 || r.Opacity >= 1 {
+		return w.addRun(ops, r)
+	}
+	name := model.Name(fmt.Sprintf("TXGS%d", len(w.gs)+1))
+	w.gs[name] = model.Dict{
+		model.Name("Type"): model.Name("ExtGState"),
+		model.Name("ca"):   model.Real(r.Opacity),
+		model.Name("CA"):   model.Real(r.Opacity),
+	}
+	ops = append(ops, content.Op{Name: "q"}, content.Op{Name: "gs", Args: []model.Object{name}})
+	w.forget()
+	ops = w.addRun(ops, r)
+	w.forget()
+	return append(ops, content.Op{Name: "Q"})
+}
+
+// addRun appends the ops for one opaque text run.
+func (w *textOpsWriter) addRun(ops []content.Op, r textRun) []content.Op {
 	b := w.b
 	fontRes, ef := w.fontRes, w.ef
 	baseName := r.FontName
@@ -438,10 +460,11 @@ func (b *DocumentBuilder) buildPageContent(page *pageSpec, pageHeight float64, i
 		ops, fontRes, xobj, imageGS = b.buildOpsInCallOrder(page, imageStreamNums)
 	} else {
 		ops = b.buildGraphicsOps(page, pageHeight)
-		textOps, fr := b.buildTextOps(page, pageHeight, nil)
+		textOps, fr, textGS := b.buildTextOps(page, pageHeight, nil)
 		ops = append(ops, textOps...)
 		imageOps, xo, gs := b.buildImageOps(page, pageHeight, imageStreamNums)
 		ops = append(ops, imageOps...)
+		maps.Copy(gs, textGS)
 		fontRes, xobj, imageGS = fr, xo, gs
 	}
 
