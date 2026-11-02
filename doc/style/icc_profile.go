@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package style
 
 // ICCProfile holds an ICC color profile for embedding in the PDF.

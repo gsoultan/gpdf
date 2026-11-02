@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package style
 
 // ListMarker defines the type of bullet or numbering used for lists.

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package font
 
 // Font provides glyph metrics and encoding for text measurement and PDF font embedding.

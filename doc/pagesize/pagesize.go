@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package pagesize
 
 // Size represents page dimensions in points (1/72 inch).

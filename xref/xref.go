@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package xref
 
 // Table provides access to the cross-reference table for resolving indirect object locations.

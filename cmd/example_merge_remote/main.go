@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Example merge remote demonstrates how to merge PDFs from URLs and simulated S3 sources.
 //
 // Usage:

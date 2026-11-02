@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package font
 
 // Metrics holds typographic measurements for a font, all in font units (typically 1/1000 em or unitsPerEm).

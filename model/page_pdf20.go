@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // AssociatedFiles returns the /AF (associated files) array from the page dictionary (PDF 2.0).

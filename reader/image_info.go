@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package reader
 
 // ImageInfo holds metadata and raw bytes for a single image XObject found on a page.
