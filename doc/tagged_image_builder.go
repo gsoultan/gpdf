@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package doc
 
 // TaggedImageBuilder exposes tagged image helpers (figures, JPEG, PNG with alt text).

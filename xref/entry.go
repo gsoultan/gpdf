@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package xref
 
 // Entry represents one cross-reference table entry (offset, generation, in-use flag).

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // DPartRef returns the /DPart (document part hierarchy) reference if present (PDF 2.0).

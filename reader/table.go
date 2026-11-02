@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package reader
 
 // Table is a grid of TableCells detected from aligned text blocks on a page.

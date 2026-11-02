@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package font
 
 // Glyph is one shaped glyph: the code to write into an Identity-H content

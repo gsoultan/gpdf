@@ -36,6 +36,12 @@ jobs:
           echo "$HOME/verapdf" >> "$GITHUB_PATH"
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Copyright headers
+        run: |
+          missing=$(git ls-files '*.go' \
+            | xargs grep -L -x '// Copyright (c) [0-9]\{4\} Gembit Soultan Shirazi <gembit.soultan@gmail.com>' \
+            | xargs -r grep -L '^// Code generated .* DO NOT EDIT\.$' || true)
+          if [ -n "$missing" ]; then echo "Missing copyright header:"; echo "$missing"; exit 1; fi
       - name: vet
         run: go vet ./...
       - name: test

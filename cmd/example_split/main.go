@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Example split demonstrates how to split a PDF file into multiple smaller files.
 //
 // Usage:

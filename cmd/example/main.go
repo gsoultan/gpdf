@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Example demonstrates gPDF: open, read, new, and save.
 //
 // Usage:

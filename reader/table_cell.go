@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package reader
 
 // TableCell is a single cell within a detected table, containing the merged

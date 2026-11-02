@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // StructTreeRoot is the structure tree root (Catalog /StructTreeRoot) for tagged PDF.

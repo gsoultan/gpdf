@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Package pdftest builds small hand-made PDF files for regression tests.
 // It writes exactly the bytes it is given, so tests can produce malformed input on purpose.
 package pdftest

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // Perms is the document permissions dictionary (Catalog /Perms). Used for DocMDP (signature) and other permissions.

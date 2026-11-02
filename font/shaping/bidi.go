@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Package shaping implements the text preparation steps that sit between a
 // Unicode string and the glyphs written into a PDF content stream: the Unicode
 // bidirectional algorithm (UAX #9) that turns logical text into visual runs,

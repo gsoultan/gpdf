@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package image
 
 // Options configures image placement. Used by DrawImageWith and DrawTaggedImageWith

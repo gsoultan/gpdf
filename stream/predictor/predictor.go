@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 // Package predictor implements the PNG and TIFF predictors that PDF applies
 // after FlateDecode and LZWDecode (ISO 32000-1 §7.4.4.4, /DecodeParms /Predictor).
 package predictor

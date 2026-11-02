@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Gembit Soultan Shirazi <gembit.soultan@gmail.com>
+
 package model
 
 // SearchResult holds the 0-based page indices and byte offsets where a keyword was found.
