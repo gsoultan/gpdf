@@ -133,6 +133,7 @@ func (f *Font) initialize() (*Font, error) {
 	if err := f.parseKern(); err != nil {
 		// kern table is optional
 	}
+	f.parseGPOS()
 	if err := f.parseGSUB(); err != nil {
 		// GSUB table is optional
 	}
