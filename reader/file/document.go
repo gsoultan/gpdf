@@ -282,6 +282,16 @@ func (d *Document) Resolve(ref model.Ref) (model.Object, error) {
 	return d.doc.Resolve(ref)
 }
 
+// ResolveEncoded returns the object at ref with streams left in their stored
+// encoding (see reader.EncodedResolver); documents without that support resolve
+// as usual.
+func (d *Document) ResolveEncoded(ref model.Ref) (model.Object, error) {
+	if er, ok := d.doc.(reader.EncodedResolver); ok {
+		return er.ResolveEncoded(ref)
+	}
+	return d.doc.Resolve(ref)
+}
+
 // ObjectNumbers returns all indirect object numbers (for writing).
 func (d *Document) ObjectNumbers() []int {
 	return d.doc.ObjectNumbers()

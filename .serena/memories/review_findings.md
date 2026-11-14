@@ -176,3 +176,11 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
 ## Repo / process
 - FIXED 2026-10-31 — `go.sum` was gitignored.
 - FIXED 2026-10-31 — CI: `.github/workflows/go.yml` runs gofmt, vet, `go test -race` (with poppler installed).
+
+## 2026-11-14 (merge/split for proteus-server)
+- FIXED — merge/split built the whole output in memory and decoded + re-encoded every stream (images were
+  recompressed: 3×20 image pages took 304 ms and 81 MB). New streaming `doc.MergeTo`/`SplitTo` copy streams in
+  their stored encoding, dedupe identical streams across inputs and can AES-256 encrypt the output.
+  [tests/doc/merge_stream_test.go, BenchmarkMergeTo]
+- Open: merged/split output drops /AcroForm (widgets are copied but the form is gone), outlines, structure
+  tree and named destinations; /Info only from the first source. In-memory `Merge`/`Split` keep decoding.
