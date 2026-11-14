@@ -580,3 +580,64 @@ func (c *documentCore) Generation(num int) int {
 	}
 	return 0
 }
+
+// EncodedResolver is implemented by documents that can hand out streams in their
+// stored (still encoded, but decrypted) form. Copying such a stream to another
+// file skips decoding and re-encoding it.
+type EncodedResolver interface {
+	ResolveEncoded(ref model.Ref) (model.Object, error)
+}
+
+// ResolveEncoded is Resolve, except that a stream comes back decrypted but still
+// encoded with its /Filter chain and marked model.Stream.Encoded. Such streams are
+// not cached, so copying a large file through this method does not fill the cache
+// with decoded content. Objects changed since the file was read, objects inside
+// object streams (which are never streams) and streams using a named crypt filter
+// go through Resolve.
+func (c *documentCore) ResolveEncoded(ref model.Ref) (model.Object, error) {
+	c.mu.Lock()
+	modified := c.modified[ref]
+	c.mu.Unlock()
+	e, ok := c.xref.Get(ref.ObjectNumber)
+	if modified || !ok || !e.InUse || e.Compressed || e.Generation != ref.Generation {
+		return c.Resolve(ref)
+	}
+	c.mu.Lock()
+	cached, isCached := c.objects[ref]
+	c.mu.Unlock()
+	if isCached {
+		if _, isStream := cached.(*model.Stream); !isStream {
+			return cached, nil
+		}
+	}
+	p := c.newParser()
+	if err := p.SetPosition(e.Offset); err != nil {
+		return nil, err
+	}
+	indirect, _, err := p.ParseObject()
+	if err != nil || indirect == nil ||
+		indirect.ObjectNumber != ref.ObjectNumber || indirect.Generation != ref.Generation {
+		return c.Resolve(ref)
+	}
+	s, isStream := indirect.Value.(*model.Stream)
+	if !isStream {
+		return c.Resolve(ref)
+	}
+	if _, named := cryptFilterName(s.Dict); named {
+		return c.Resolve(ref)
+	}
+	decrypt := c.decryptor != nil
+	dictObj, err := c.transformObject(s.Dict, ref, decrypt)
+	if err != nil {
+		return nil, fmt.Errorf("object %d %d R: %w", ref.ObjectNumber, ref.Generation, err)
+	}
+	dict, _ := dictObj.(model.Dict)
+	content := s.Content
+	if decrypt {
+		content, err = c.decryptStreamContent(s, ref)
+		if err != nil {
+			return nil, fmt.Errorf("object %d %d R: %w", ref.ObjectNumber, ref.Generation, err)
+		}
+	}
+	return &model.Stream{Dict: dict, Content: content, Encoded: true}, nil
+}

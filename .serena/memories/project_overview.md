@@ -8,7 +8,8 @@
 - Size: ~250 Go files, ~27.6k lines. Largest packages: `doc` (7.0k), `reader` (6.5k), `tests/doc` (1.7k),
   `font/truetype` (1.2k), `writer` (1.1k).
 - Entry points for users: `doc.Open`, `doc.OpenWithPassword`, `doc.OpenReader`, `doc.New()` builder,
-  `doc.Merge`, `doc.Split`, `doc.SplitEvery`, `doc.Extract`. CLI examples in `cmd/*` (each takes an output path).
+  `doc.Merge`, `doc.Split`, `doc.SplitEvery`, `doc.Extract`, streaming `doc.MergeTo` / `doc.SplitTo` (preferred for
+  files: low memory, small output, encrypted in/out) and `doc.ParsePageRanges`. CLI examples in `cmd/*` (each takes an output path).
 - Sample input committed at repo root: `CV CONTOH.pdf` (Canva, xref table, 1 page). `cmd/cv` recreates it.
 - PDF 2.0 audit 2026-11-01 (round 3): text strings, dates, SASLprep, XMP, attachments/AF, PDF/A-4, form appearances,
   page output intents, document parts, black point compensation. See `review_findings` for what is still open.

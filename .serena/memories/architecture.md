@@ -24,6 +24,17 @@ Key flows
 - Open: `doc.Open` → `reader/file` → `reader.PDFReader` → `documentCore.Resolve` (parse at xref offset, decrypt strings/streams per object, decode filters, cache with FIFO limit).
 - Save: `file.Document.Save` → `writer.Write` resolves each object with its real generation and rewrites streams, re-encoding the full `/Filter` chain (Flate/LZW with the predictor their /DecodeParms ask for). `builtDocument.newWriter` passes `NoObjectStreams()` through as `WriterOptions.ObjectStreams=false`.
 - Merge/Split/Extract: `copyPages` (`doc/page_copier.go`) reserves numbers for selected pages, drops /Parent /StructParents /B, and `objectCloner` deep-copies the rest (refs to unselected Page/Pages become null) into a fresh `builtDocument`.
+- Streaming merge/split (`doc/merge_stream.go`, 2026-11-14): `MergeTo(w, CopyOptions, ...PageSource{Doc, Pages})`
+  and `SplitTo(src, ranges, opts, open func(part) io.Writer)` write through `writer.StreamWriter` as they copy
+  (nothing held but packed dicts + xref entries). `sourceCopier` uses `reader.EncodedResolver.ResolveEncoded`
+  (`documentCore`, forwarded by `reader/file.Document`): streams come back decrypted but still encoded, marked
+  `model.Stream.Encoded`, uncached; the writer's `encodeStream` copies Encoded content as is (named /Crypt filters
+  and modified objects fall back to Resolve). Identical reference-free streams across sources are written once
+  (`streamKey` = sha256 of canonical dict + content). `CopyOptions.UserPassword/OwnerPassword` →
+  `StreamWriter.SetAES256Password` (encrypt dict written unencrypted at Close, fixed /ID). `NoObjectStreams` →
+  1.4 classic table. `doc.ParsePageRanges("1-3,5,8-,last-1", n)` → 0-based indices (descending, repeats, cap
+  max(10n, 10000)). Bench: 3×20 pages with images MergeTo 4.6 ms / 4.6 MB vs Merge+Save 304 ms / 81 MB.
+  In-memory Merge/Split still decode (their builtDocument is read back by extraction APIs, which need decoded content).
 - Builder paint: `buildPageContent` uses `buildGraphicsOps`/`buildTextOps`/`buildImageOps` (layered, default) or
   `buildOpsInCallOrder` (`doc/paint_order.go`, sorted by run `Seq`); both go through `textOpsWriter` and
   `imageOpsWriter`. In call order, the text writer forgets its color/text state after each graphic run.

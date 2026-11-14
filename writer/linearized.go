@@ -228,7 +228,7 @@ func remapRefs(o model.Object, m map[int]int) model.Object {
 		}
 		return out
 	case *model.Stream:
-		return &model.Stream{Dict: remapRefs(v.Dict, m).(model.Dict), Content: v.Content}
+		return &model.Stream{Dict: remapRefs(v.Dict, m).(model.Dict), Content: v.Content, Encoded: v.Encoded}
 	}
 	return o
 }

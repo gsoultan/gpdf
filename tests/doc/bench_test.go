@@ -252,3 +252,30 @@ func BenchmarkMerge(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkMergeTo is BenchmarkMerge through the streaming MergeTo (images included).
+func BenchmarkMergeTo(b *testing.B) {
+	pdf := benchPDF(b, benchBuilder(20, true))
+	b.ReportAllocs()
+	for b.Loop() {
+		srcs := []doc.PageSource{{Doc: openBench(b, pdf)}, {Doc: openBench(b, pdf)}, {Doc: openBench(b, pdf)}}
+		if _, err := doc.MergeTo(io.Discard, doc.CopyOptions{}, srcs...); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkMergeImages is BenchmarkMerge with images, to compare with BenchmarkMergeTo.
+func BenchmarkMergeImages(b *testing.B) {
+	pdf := benchPDF(b, benchBuilder(20, true))
+	b.ReportAllocs()
+	for b.Loop() {
+		merged, err := doc.Merge(openBench(b, pdf), openBench(b, pdf), openBench(b, pdf))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := merged.Save(io.Discard); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

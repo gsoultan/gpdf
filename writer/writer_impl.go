@@ -545,7 +545,7 @@ func filterNames(obj model.Object) ([]string, bool) {
 	return nil, false
 }
 
-// encodeStream re-encodes the (decoded) stream content with the stream's filter chain and
+// encodeStream re-encodes the (decoded) stream content (content marked Encoded is copied as is) with the stream's filter chain and
 // returns the dictionary to write and the encoded bytes. Filters are applied last to first,
 // since a reader decodes them first to last. Flate and LZW apply the PNG or TIFF predictor
 // their /DecodeParms ask for (image samples and cross-reference rows compress far better
@@ -557,6 +557,10 @@ func (pw *PDFWriter) encodeStream(v *model.Stream) (model.Dict, []byte) {
 	dict := maps.Clone(v.Dict)
 	if dict == nil {
 		dict = make(model.Dict)
+	}
+	if v.Encoded {
+		// Already in its stored form: copied as is.
+		return dict, v.Content
 	}
 	raw := func() (model.Dict, []byte) {
 		delete(dict, model.Name("Filter"))
