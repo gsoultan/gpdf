@@ -176,3 +176,8 @@ Every FIXED item has a regression test (see the test named in brackets). Interop
 ## Repo / process
 - FIXED 2026-10-31 — `go.sum` was gitignored.
 - FIXED 2026-10-31 — CI: `.github/workflows/go.yml` runs gofmt, vet, `go test -race` (with poppler installed).
+- PERF 2026-11-14 — `truetype.Font.TextWidth` returns the summed advances without shaping when the text has
+  no Arabic letters and no glyph that starts a GSUB ligature (`gsub.ligStart`, filled while ligatures are
+  registered); otherwise `shapedWidth` runs the full `Shape`. `TestTextWidthMatchesShape` checks both paths
+  agree on system fonts. `content.writeHexString` uses a lookup table instead of fmt. Both were the top
+  allocators when proteus-converter measured a 20,000-row table (text measured once per word).

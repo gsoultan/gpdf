@@ -5,6 +5,7 @@ package truetype
 import (
 	"encoding/binary"
 	"github.com/gsoultan/gpdf/font"
+	"github.com/gsoultan/gpdf/font/shaping"
 )
 
 // Font is a parsed TrueType font providing glyph metrics and character mapping.
@@ -134,6 +135,36 @@ func (f *Font) TextWidth(text string, fontSize float64) float64 {
 	if f.unitsPerEm == 0 {
 		return 0
 	}
+	// When no glyph of the text starts a ligature and nothing is Arabic,
+	// every rune is one glyph, so the width is the advances plus pair
+	// kerning, measured without allocating the shaped glyph slice (text
+	// layout measures far more than it draws).
+	var total int
+	var prev uint16
+	var ligStart map[uint16]bool
+	if f.gsub != nil {
+		ligStart = f.gsub.ligStart
+	}
+	for i, r := range text {
+		if shaping.IsArabicLetter(r) {
+			return f.shapedWidth(text, fontSize)
+		}
+		gid := f.runeToGlyph[r]
+		if ligStart[gid] {
+			return f.shapedWidth(text, fontSize)
+		}
+		if int(gid) < len(f.glyphWidths) {
+			total += int(f.glyphWidths[gid])
+		}
+		if i > 0 {
+			total += f.pairKern(prev, gid)
+		}
+		prev = gid
+	}
+	return float64(total) * fontSize / float64(f.unitsPerEm)
+}
+
+func (f *Font) shapedWidth(text string, fontSize float64) float64 {
 	var total int
 	for _, g := range f.Shape(text) {
 		total += g.Advance + g.Kern
