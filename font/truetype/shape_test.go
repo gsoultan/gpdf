@@ -3,7 +3,9 @@
 package truetype
 
 import (
+	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -143,5 +145,34 @@ func TestCFFDictAndCharset(t *testing.T) {
 	parseCFFCharset([]byte{0, 0x00, 0x20, 0x00, 0x21}, gidToCID[:3]) // format 0
 	if gidToCID[1] != 0x20 || gidToCID[2] != 0x21 {
 		t.Errorf("charset format 0 %v", gidToCID)
+	}
+}
+
+// TestTextWidthMatchesShape checks that the allocation-free width path agrees
+// with the shaped glyphs for text with and without ligatures and kerning.
+func TestTextWidthMatchesShape(t *testing.T) {
+	paths, _ := filepath.Glob("/usr/share/fonts/truetype/*/*.ttf")
+	if len(paths) == 0 {
+		t.Skip("no system fonts")
+	}
+	for _, p := range paths[:min(len(paths), 12)] {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		f, err := Parse(data)
+		if err != nil {
+			continue
+		}
+		for _, text := range []string{"Hello, World!", "fi fl ffi office", "AVAWAY To Ty", "1,234.56", "", "x", "áb"} {
+			var want int
+			for _, g := range f.Shape(text) {
+				want += g.Advance + g.Kern
+			}
+			got := f.TextWidth(text, float64(f.unitsPerEm))
+			if math.Abs(got-float64(want)) > 1e-6 {
+				t.Errorf("%s %q: TextWidth %v, shaped %d", filepath.Base(p), text, got, want)
+			}
+		}
 	}
 }

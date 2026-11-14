@@ -15,6 +15,9 @@ type GSUB struct {
 	// Ligatures maps a packed sequence of 2-byte glyph IDs (2 to 3 glyphs) to
 	// the ligature glyph.
 	Ligatures map[string]uint16
+	// ligStart marks the glyphs that begin a ligature sequence, so that text
+	// without any of them can be measured without running the ligature pass.
+	ligStart map[uint16]bool
 	// Forms maps an OpenType feature tag (init, medi, fina, isol) to the
 	// single substitutions it performs for the Arabic script.
 	Forms map[string]map[uint16]uint16
@@ -415,4 +418,8 @@ func (f *Font) parseLigature(d []byte, startGID uint16) {
 		binary.BigEndian.PutUint16(key[2+i*2:4+i*2], gid)
 	}
 	f.gsub.Ligatures[string(key)] = ligGlyph
+	if f.gsub.ligStart == nil {
+		f.gsub.ligStart = map[uint16]bool{}
+	}
+	f.gsub.ligStart[binary.BigEndian.Uint16(key)] = true
 }

@@ -148,11 +148,14 @@ func writeLiteralString(w io.Writer, s string) {
 }
 
 func writeHexString(w io.Writer, b []byte) {
-	io.WriteString(w, "<")
+	const hexDigits = "0123456789ABCDEF"
+	buf := make([]byte, 0, 2*len(b)+2)
+	buf = append(buf, '<')
 	for _, c := range b {
-		fmt.Fprintf(w, "%02X", c)
+		buf = append(buf, hexDigits[c>>4], hexDigits[c&0xF])
 	}
-	io.WriteString(w, ">")
+	buf = append(buf, '>')
+	w.Write(buf)
 }
 
 func escapeContentName(s string) string {
